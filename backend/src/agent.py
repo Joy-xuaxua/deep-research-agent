@@ -86,9 +86,16 @@ class DeepResearchAgent:
     # Public API
     # ------------------------------------------------------------------
     def _init_llm(self) -> HelloAgentsLLM:
-        """Instantiate HelloAgentsLLM following configuration preferences."""
-        llm_kwargs: dict[str, Any] = {"temperature": 0.0}
+        """Instantiate HelloAgentsLLM following configuration preferences.
 
+        Supports multiple providers (ollama, lmstudio, custom) with provider-specific
+        base URL and API key handling.
+
+        Returns:
+            HelloAgentsLLM: Configured LLM instance for agent operations
+        """
+        # step 1: build base LLM configuration with model and provider
+        llm_kwargs: dict[str, Any] = {"temperature": 0.0}
         model_id = self.config.llm_model_id or self.config.local_llm
         if model_id:
             llm_kwargs["model"] = model_id
@@ -97,6 +104,7 @@ class DeepResearchAgent:
         if provider:
             llm_kwargs["provider"] = provider
 
+        # step 2: configure provider-specific settings (base URL and API key)
         if provider == "ollama":
             llm_kwargs["base_url"] = self.config.sanitized_ollama_url()
             if self.config.llm_api_key:
@@ -116,7 +124,19 @@ class DeepResearchAgent:
         return HelloAgentsLLM(**llm_kwargs)
 
     def _create_tool_aware_agent(self, *, name: str, system_prompt: str) -> ToolAwareSimpleAgent:
-        """Instantiate a ToolAwareSimpleAgent sharing tool registry and tracker."""
+        """Instantiate a ToolAwareSimpleAgent sharing tool registry and tracker.
+
+        Creates specialized agents (planner, summarizer, reporter) that all share
+        the same tool registry (for NoteTool access) and tool call tracker (for
+        event recording).
+
+        Args:
+            name: Human-readable agent name (e.g., "研究规划专家", "报告撰写专家")
+            system_prompt: The agent's system prompt defining its role and behavior
+
+        Returns:
+            ToolAwareSimpleAgent: Configured agent with shared tool infrastructure
+        """
         return ToolAwareSimpleAgent(
             name=name,
             llm=self.llm,
@@ -127,11 +147,16 @@ class DeepResearchAgent:
         )
 
     def _set_tool_event_sink(self, sink: Callable[[dict[str, Any]], None] | None) -> None:
-        """Enable or disable immediate tool event callbacks."""
+        """Enable or disable immediate tool event callbacks.
+
+        Configures a callback that receives tool events immediately, rather than
+        buffering them. Used during streaming to forward NoteTool events to the SSE queue.
+
+        Args:
+            sink: Callback function(dict) to receive tool events, or None to disable
+        """
         self._tool_event_sink_enabled = sink is not None
         self._tool_tracker.set_event_sink(sink)
-
-    def run(self, topic: str) -> SummaryStateOutput:
         """Execute the research workflow and return the final report."""
         state = SummaryState(research_topic=topic)
         state.todo_items = self.planner.plan_todo_list(state)
@@ -160,7 +185,21 @@ class DeepResearchAgent:
         )
 
     def run_stream(self, topic: str) -> Iterator[dict[str, Any]]:
-        """Execute the workflow yielding incremental progress events."""
+        """Execute the workflow yielding incremental progress events.
+
+        Main streaming entry point orchestrating the research workflow with
+        parallel task execution using worker threads and thread-safe event queue.
+
+        Workflow: Planning -> Execution (parallel) -> Reporting -> Persistence -> Archiving
+
+        Args:
+            topic: The research topic/query to investigate
+
+        Yields:
+            dict[str, Any]: Progress events including status, todo_list, task_status,
+                sources, task_summary_chunk, tool_call, final_report, archived, done
+        """
+        # step 1: initialize state and generate TODO list
         state = SummaryState(research_topic=topic)
         logger.debug("Starting streaming research: topic=%s", topic)
         yield {"type": "status", "message": "初始化研究流程"}
@@ -168,9 +207,11 @@ class DeepResearchAgent:
         state.todo_items = self.planner.plan_todo_list(state)
         for event in self._drain_tool_events(state, step=0):
             yield event
+
         if not state.todo_items:
             state.todo_items = [self.planner.create_fallback_task(state)]
 
+        # step 2: build channel map for task-to-step/token routing (frontend correlation)
         channel_map: dict[int, dict[str, Any]] = {}
         for index, task in enumerate(state.todo_items, start=1):
             token = f"task_{task.id}"
@@ -183,6 +224,7 @@ class DeepResearchAgent:
             "step": 0,
         }
 
+        # step 3: setup event queue and enqueue function with task metadata decoration
         event_queue: Queue[dict[str, Any]] = Queue()
 
         def enqueue(
@@ -210,6 +252,7 @@ class DeepResearchAgent:
 
         self._set_tool_event_sink(tool_event_sink)
 
+        # step 4: launch worker threads for parallel task execution
         threads: list[Thread] = []
 
         def worker(task: TodoItem, step: int) -> None:
@@ -229,7 +272,7 @@ class DeepResearchAgent:
 
                 for event in self._execute_task(state, task, emit_stream=True, step=step):
                     enqueue(event, task=task)
-            except Exception as exc:  # pragma: no cover - defensive guardrail
+            except Exception as exc:
                 logger.exception("Task execution failed", exc_info=exc)
                 enqueue(
                     {
@@ -253,6 +296,7 @@ class DeepResearchAgent:
             threads.append(thread)
             thread.start()
 
+        # step 5: main event loop - yield events from queue until all workers complete
         active_workers = len(state.todo_items)
         finished_workers = 0
 
@@ -276,6 +320,7 @@ class DeepResearchAgent:
             for thread in threads:
                 thread.join()
 
+        # step 6: generate final report and update state
         report = self.reporting.generate_report(state)
         final_step = len(state.todo_items) + 1
         for event in self._drain_tool_events(state, step=final_step):
@@ -283,6 +328,7 @@ class DeepResearchAgent:
         state.structured_report = report
         state.running_summary = report
 
+        # step 7: persist report to note workspace
         note_event = self._persist_final_report(state, report)
         if note_event:
             yield note_event
@@ -294,7 +340,7 @@ class DeepResearchAgent:
             "note_path": state.report_note_path,
         }
 
-        # Archive notes and emit archive event
+        # step 8: archive research notes
         archive_event = self._archive_research_notes(state, status="completed")
         if archive_event:
             yield archive_event
@@ -312,9 +358,23 @@ class DeepResearchAgent:
         emit_stream: bool,
         step: int | None = None,
     ) -> Iterator[dict[str, Any]]:
-        """Run search + summarization for a single task."""
+        """Run search + summarization for a single task.
+
+        Core research workflow: Dispatch search -> Validate results -> Prepare context
+        -> Summarize -> Update task state.
+
+        Args:
+            state: The shared research state object
+            task: The TODO task to execute
+            emit_stream: If True, yield progress events; if False, run silently
+            step: Optional step number for event correlation in streaming mode
+
+        Yields:
+            dict[str, Any]: Progress events when emit_stream=True
+        """
         task.status = "in_progress"
 
+        # step 1: dispatch search to configured backend (duckduckgo, tavily, etc.)
         search_result, notices, answer_text, backend = dispatch_search(
             task.query,
             self.config,
@@ -339,6 +399,7 @@ class DeepResearchAgent:
                         "step": step,
                     }
 
+        # step 2: handle empty search results - mark task as skipped
         if not search_result or not search_result.get("results"):
             task.status = "skipped"
             if emit_stream:
@@ -361,6 +422,7 @@ class DeepResearchAgent:
             if not emit_stream:
                 self._drain_tool_events(state)
 
+        # step 3: prepare research context and update shared state
         sources_summary, context = prepare_research_context(
             search_result,
             answer_text,
@@ -376,9 +438,11 @@ class DeepResearchAgent:
 
         summary_text: str | None = None
 
+        # step 4: execute summarization (streaming or blocking)
         if emit_stream:
             for event in self._drain_tool_events(state, step=step):
                 yield event
+
             yield {
                 "type": "sources",
                 "task_id": task.id,
@@ -411,6 +475,7 @@ class DeepResearchAgent:
             summary_text = self.summarizer.summarize_task(state, task, context)
             self._drain_tool_events(state)
 
+        # step 5: update task with summary and mark completed
         task.summary = summary_text.strip() if summary_text else "暂无可用信息"
         task.status = "completed"
 
@@ -436,7 +501,19 @@ class DeepResearchAgent:
         *,
         step: int | None = None,
     ) -> list[dict[str, Any]]:
-        """Proxy to the shared tool call tracker."""
+        """Proxy to the shared tool call tracker.
+
+        Retrieves and clears buffered tool events from the tracker. When an event
+        sink is active (streaming mode), events are immediately forwarded and this
+        returns an empty list.
+
+        Args:
+            state: The research state to associate with drained events
+            step: Optional step number to attach to events for frontend correlation
+
+        Returns:
+            list[dict[str, Any]]: Drained tool events, or empty list if sink enabled
+        """
         events = self._tool_tracker.drain(state, step=step)
         if self._tool_event_sink_enabled:
             return []
@@ -463,6 +540,19 @@ class DeepResearchAgent:
         }
 
     def _persist_final_report(self, state: SummaryState, report: str) -> dict[str, Any] | None:
+        """Persist the final research report to the note workspace.
+
+        Checks if a report note already exists and updates it, otherwise creates
+        a new note. The report is tagged as "conclusion" type for archival.
+
+        Args:
+            state: The research state containing the topic and existing note IDs
+            report: The final markdown report content to persist
+
+        Returns:
+            dict[str, Any] | None: Event payload with note metadata if successful,
+                None if note_tool disabled or persistence fails
+        """
         if not self.note_tool or not report or not report.strip():
             return None
 
@@ -470,6 +560,7 @@ class DeepResearchAgent:
         tags = ["deep_research", "report"]
         content = report.strip()
 
+        # step 1: try to update existing report note, or create new one
         note_id = self._find_existing_report_note_id(state)
         response = ""
 
@@ -502,13 +593,16 @@ class DeepResearchAgent:
         if not note_id:
             return None
 
+        # step 2: update state and build event payload
         state.report_note_id = note_id
+
         if self.config.notes_workspace:
             note_path = Path(self.config.notes_workspace) / f"{note_id}.md"
             state.report_note_path = str(note_path)
         else:
             note_path = None
 
+        # Step 3: Build and return event payload for frontend
         payload = {
             "type": "report_note",
             "note_id": note_id,
@@ -521,9 +615,22 @@ class DeepResearchAgent:
         return payload
 
     def _find_existing_report_note_id(self, state: SummaryState) -> str | None:
+        """Search for an existing report note ID to avoid duplication.
+
+        Searches through recorded tool events to find if a report note has already
+        been created. Looks for note tool calls with "conclusion" type or titles
+        starting with "研究报告" (Research Report).
+
+        Args:
+            state: The research state which may already have a report_note_id
+
+        Returns:
+            str | None: The existing note ID if found, None otherwise
+        """
         if state.report_note_id:
             return state.report_note_id
 
+        # step 1: search tool events for matching report note
         for event in reversed(self._tool_tracker.as_dicts()):
             if event.get("tool") != "note":
                 continue
@@ -536,12 +643,14 @@ class DeepResearchAgent:
             if action not in {"create", "update"}:
                 continue
 
+            # step 2: check note type or title pattern match
             note_type = parameters.get("note_type")
             if note_type != "conclusion":
                 title = parameters.get("title")
                 if not (isinstance(title, str) and title.startswith("研究报告")):
                     continue
 
+            # step 3: extract and return note_id if found
             note_id = parameters.get("note_id")
             if not note_id:
                 note_id = self._tool_tracker._extract_note_id(event.get("result", ""))  # type: ignore[attr-defined]
@@ -569,18 +678,21 @@ class DeepResearchAgent:
     ) -> dict[str, Any] | None:
         """Archive research notes after completion.
 
+        Moves all research-related notes from the active workspace to the archive
+        directory, organized by topic with meaningful filenames.
+
         Args:
             state: The research state containing all task and report info
-            status: Research status (completed/failed)
+            status: Research status (completed/failed) for archive metadata
 
         Returns:
-            Archive info dict or None if archiving is disabled
+            dict[str, Any] | None: Archive event payload if enabled, None otherwise
         """
         if not self.archiver:
             return None
 
         try:
-            # Collect task note IDs and titles
+            # step 1: collect task note IDs and titles
             task_note_ids: dict[int, str] = {}
             task_titles: dict[int, str] = {}
             for task in state.todo_items:
@@ -592,7 +704,7 @@ class DeepResearchAgent:
                 logger.info("No notes to archive")
                 return None
 
-            # Perform archival
+            # step 2: perform archival through NoteArchiver service
             archive_result = self.archiver.archive_research(
                 research_topic=state.research_topic,
                 report_note_id=state.report_note_id,
@@ -605,12 +717,11 @@ class DeepResearchAgent:
                 f"Archived research '{state.research_topic}' to {archive_result['archive_dir']}"
             )
 
-            # Update state with archive paths
+            # step 3: update state with archive paths and return event
             state.archive_dir = archive_result["archive_dir"]
             state.archive_report_path = archive_result.get("report_path")
             state.archive_task_paths = archive_result.get("task_paths", {})
 
-            # Log orphaned notes if any
             orphaned = archive_result.get("orphaned_note_paths", [])
             if orphaned:
                 logger.warning(f"Found {len(orphaned)} orphaned notes during archival: {orphaned}")
