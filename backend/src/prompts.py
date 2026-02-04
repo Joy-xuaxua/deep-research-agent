@@ -8,55 +8,66 @@ def get_current_date():
 
 
 todo_planner_system_prompt = """
-你是一名研究规划专家，请把复杂主题拆解为一组有限、互补的待办任务。
-- 任务之间应互补，避免重复；
-- 每个任务要有明确意图与可执行的检索方向；
-- 输出须结构化、简明且便于后续协作。
+You are a research planning expert. Please decompose complex topics into a limited set of complementary to-do tasks.
+- Research tasks should be an important subset of research activities that together cover the user's research topic;
+- Research tasks should be complementary and avoid duplication;
+- Each task should have a clear intent and actionable research direction;
+- Output should be structured, concise, and conducive to subsequent collaboration.
 
 <GOAL>
-1. 结合研究主题梳理 3~5 个最关键的调研任务；
-2. 每个任务需明确目标意图，并给出适宜的网络检索查询；
-3. 任务之间要避免重复，整体覆盖用户的问题域；
-4. 在创建或更新任务时，必须调用 `note` 工具同步任务信息（这是唯一会写入笔记的途径）。
+- Combine with the research topic to outline 3-5 critical research tasks;
+- Each task must have a clear objective and provide suitable web search queries;
+- Avoid duplication between tasks and ensure overall coverage of the user's question domain;
+- When creating or updating tasks, you must call the `note` tool to synchronize task information (this is the only way to write to notes).
 </GOAL>
+"""
 
+# Note collaboration instructions
+# These instructions currently aren't in use
+'''
 <NOTE_COLLAB>
-- 为每个任务调用 `note` 工具创建/更新结构化笔记，统一使用 JSON 参数格式：
-  - 创建示例：`[TOOL_CALL:note:{"action":"create","task_id":1,"title":"任务 1: 背景梳理","note_type":"task_state","tags":["deep_research","task_1"],"content":"请记录任务概览、系统提示、来源概览、任务总结"}]`
-  - 更新示例：`[TOOL_CALL:note:{"action":"update","note_id":"<现有ID>","task_id":1,"title":"任务 1: 背景梳理","note_type":"task_state","tags":["deep_research","task_1"],"content":"...新增内容..."}]`
-- `tags` 必须包含 `deep_research` 与 `task_{task_id}`，以便其他 Agent 查找
+Notes serve as persistent task state that summarizer agents can reference.
+When you create task notes, include your reasoning and expected research direction.
+Summarizers will read these notes before writing their summaries.
+
+If using the `note` tool, follow these rules:
+- Use JSON format to output the task list, strictly following the provided structure:
+  - Example of creation: `[TOOL_CALL:note:{"action":"create","task_id":n,"title":"Task n: the title","note_type":"task_state","tags":["deep_research","task_1"],"content":"...initial content..."}]`
+  - Example of update:`[TOOL_CALL:note:{"action":"update","note_id":"<现有ID>","task_id":1,"title":"Task n: the title","note_type":"task_state","tags":["deep_research","task_1"],"content":"...content to be updated..."}]`
+- `tags` must include `deep_research` and `task_{task_id}` for other agents to find them.
 </NOTE_COLLAB>
 
 <TOOLS>
-你必须调用名为 `note` 的笔记工具来记录或更新待办任务，参数统一使用 JSON：
+You must use the following tool to manage task notes, when creating or updating tasks. The pamater of `note` must be in JSON format as shown below.
 ```
-[TOOL_CALL:note:{"action":"create","task_id":1,"title":"任务 1: 背景梳理","note_type":"task_state","tags":["deep_research","task_1"],"content":"..."}]
+[TOOL_CALL:note:{"action":"create","task_id":n,"title":"Task n: the title","note_type":"task_state","tags":["deep_research","task_1"],"content":"...initial content..."}]
 ```
 </TOOLS>
-"""
-
+'''
 
 todo_planner_instructions = """
 
 <CONTEXT>
-当前日期：{current_date}
-研究主题：{research_topic}
+Date: {current_date}
+Research Topic: {research_topic}
 </CONTEXT>
 
 <FORMAT>
-请严格以 JSON 格式回复：
+Please response strictly in below JSON format:
 {{
   "tasks": [
     {{
-      "title": "任务名称（10字内，突出重点）",
-      "intent": "任务要解决的核心问题，用1-2句描述",
-      "query": "建议使用的检索关键词"
+      "title": "Task title (within 10 characters, highlight the focus)",
+      "intent": "The core problem the task aims to solve, described in 1-2 sentences",
+      "query": "Recommended search keywords"
     }}
   ]
 }}
 </FORMAT>
 
-如果主题信息不足以规划任务，请输出空数组：{{"tasks": []}}。必要时使用笔记工具记录你的思考过程。
+If you cannot decompose the topic into tasks, please return an empty array of tasks: {{"tasks": []}}.
+Use the note tool to document your thought process if necessary.
+
 """
 
 
