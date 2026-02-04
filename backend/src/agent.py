@@ -157,6 +157,8 @@ class DeepResearchAgent:
         """
         self._tool_event_sink_enabled = sink is not None
         self._tool_tracker.set_event_sink(sink)
+
+    def run(self, topic: str) -> SummaryStateOutput:
         """Execute the research workflow and return the final report."""
         state = SummaryState(research_topic=topic)
         state.todo_items = self.planner.plan_todo_list(state)
@@ -725,6 +727,15 @@ class DeepResearchAgent:
             orphaned = archive_result.get("orphaned_note_paths", [])
             if orphaned:
                 logger.warning(f"Found {len(orphaned)} orphaned notes during archival: {orphaned}")
+
+            # step 4: delete notes_index.json from workspace
+            index_file = Path(self.config.notes_workspace) / "notes_index.json"
+            if index_file.exists():
+                try:
+                    index_file.unlink()
+                    logger.info(f"Deleted notes index file: {index_file}")
+                except Exception as exc:
+                    logger.warning(f"Failed to delete notes_index.json: {exc}")
 
             return {
                 "type": "archived",
