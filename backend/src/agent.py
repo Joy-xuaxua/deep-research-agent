@@ -16,6 +16,7 @@ from hello_agents.tools.builtin.note_tool import NoteTool
 from config import Configuration
 from prompts import (
     report_writer_instructions,
+    source_validator_system_prompt,
     task_summarizer_instructions,
     todo_planner_system_prompt,
 )
@@ -23,7 +24,7 @@ from models import SummaryState, SummaryStateOutput, TodoItem
 from services.archiver import NoteArchiver
 from services.planner import PlanningService
 from services.reporter import ReportingService
-from services.search import dispatch_search, prepare_research_context
+from services.search import dispatch_search, fetch_full_content_for_sources, prepare_research_context
 from services.summarizer import SummarizationService
 from services.tool_events import ToolCallTracker
 
@@ -81,6 +82,16 @@ class DeepResearchAgent:
                 workspace=self.config.notes_workspace,
                 archives_dir=self.config.archives_dir
             )
+
+        # Initialize validation agent and validator service
+        self.validation_agent = self._create_tool_aware_agent(
+            name="信息源验证专家",
+            system_prompt=source_validator_system_prompt.strip(),
+        )
+        self.validator: Any | None = None  # Will be imported when needed
+        if self.config.enable_source_validation:
+            from services.validator import SourceValidator
+            self.validator = SourceValidator(self.validation_agent, self.config)
 
     # ------------------------------------------------------------------
     # Public API
@@ -360,10 +371,13 @@ class DeepResearchAgent:
         emit_stream: bool,
         step: int | None = None,
     ) -> Iterator[dict[str, Any]]:
-        """Run search + summarization for a single task.
+        """Run search + summarization for a single task with two-stage search.
 
-        Core research workflow: Dispatch search -> Validate results -> Prepare context
-        -> Summarize -> Update task state.
+        Core research workflow with source validation:
+        Stage 1: Lightweight search (title + snippet only)
+        Stage 2: Validate source quality using LLM
+        Stage 3: Fetch full content only for valid sources
+        Stage 4: Summarize and update task state
 
         Args:
             state: The shared research state object
@@ -376,33 +390,98 @@ class DeepResearchAgent:
         """
         task.status = "in_progress"
 
-        # step 1: dispatch search to configured backend (duckduckgo, tavily, etc.)
-        search_result, notices, answer_text, backend = dispatch_search(
-            task.query,
-            self.config,
-            state.research_loop_count,
-        )
-        self._last_search_notices = notices
-        task.notices = notices
+        # Configure search retry parameters
+        max_search_rounds = self.config.max_search_retries
+        min_valid_sources = self.config.min_valid_sources_threshold
+        valid_sources: list[dict] = []
+        search_round = 0
+        search_result: dict[str, Any] | None = None
+        answer_text: str | None = None
+        backend = ""
 
-        if emit_stream:
-            for event in self._drain_tool_events(state, step=step):
-                yield event
-        else:
-            self._drain_tool_events(state)
+        # === Two-stage search with retry loop ===
+        while search_round < max_search_rounds:
+            search_round += 1
 
-        if notices and emit_stream:
-            for notice in notices:
-                if notice:
+            # === Stage 1: Lightweight search (fetch_full_page=False) ===
+            search_result, notices, answer_text, backend = dispatch_search(
+                task.query,
+                self.config,
+                state.research_loop_count,
+                fetch_full_page=False,  # Key: Don't fetch full content yet
+            )
+            self._last_search_notices = notices
+            task.notices = notices
+
+            if emit_stream:
+                for event in self._drain_tool_events(state, step=step):
+                    yield event
+            else:
+                self._drain_tool_events(state)
+
+            if notices and emit_stream:
+                for notice in notices:
+                    if notice:
+                        yield {
+                            "type": "status",
+                            "message": notice,
+                            "task_id": task.id,
+                            "step": step,
+                        }
+
+            # Handle empty search results - continue to next round
+            if not search_result or not search_result.get("results"):
+                logger.info("Search round %d: No results for task %d", search_round, task.id)
+                continue
+
+            lightweight_sources = search_result.get("results", [])
+
+            # === Stage 2: Validate source quality (based on title + snippet) ===
+            if self.validator:
+                # Use validator service to filter sources
+                valid_sources, invalid_sources = self.validator.validate_sources(
+                    lightweight_sources,  # Only use lightweight metadata
+                    task.intent,
+                    task.query,
+                )
+
+                # Emit filtered sources event for frontend transparency
+                if emit_stream and invalid_sources:
                     yield {
-                        "type": "status",
-                        "message": notice,
+                        "type": "sources_filtered",
                         "task_id": task.id,
+                        "filtered_count": len(invalid_sources),
+                        "valid_count": len(valid_sources),
+                        "round": search_round,
                         "step": step,
                     }
 
-        # step 2: handle empty search results - mark task as skipped
-        if not search_result or not search_result.get("results"):
+                # If we have enough valid sources, exit the retry loop
+                if len(valid_sources) >= min_valid_sources:
+                    logger.info(
+                        "Search round %d: Found %d valid sources (threshold: %d)",
+                        search_round, len(valid_sources), min_valid_sources
+                    )
+                    break
+                else:
+                    logger.info(
+                        "Search round %d: Only %d valid sources (threshold: %d), continuing...",
+                        search_round, len(valid_sources), min_valid_sources
+                    )
+            else:
+                # Validation disabled, use all sources
+                valid_sources = lightweight_sources
+                break
+
+        # === Stage 3: Fetch full content only for valid sources ===
+        if self.config.fetch_full_page and valid_sources:
+            valid_sources = fetch_full_content_for_sources(
+                valid_sources,
+                self.config,
+            )
+
+        # Handle case where no valid sources were found after all retries
+        if not valid_sources:
             task.status = "skipped"
             if emit_stream:
                 for event in self._drain_tool_events(state, step=step):
@@ -420,11 +499,9 @@ class DeepResearchAgent:
             else:
                 self._drain_tool_events(state)
             return
-        else:
-            if not emit_stream:
-                self._drain_tool_events(state)
 
-        # step 3: prepare research context and update shared state
+        # Prepare research context with valid sources (now with full content)
+        search_result = {"results": valid_sources, "backend": backend}
         sources_summary, context = prepare_research_context(
             search_result,
             answer_text,
@@ -440,7 +517,7 @@ class DeepResearchAgent:
 
         summary_text: str | None = None
 
-        # step 4: execute summarization (streaming or blocking)
+        # === Stage 4: Execute summarization (streaming or blocking) ===
         if emit_stream:
             for event in self._drain_tool_events(state, step=step):
                 yield event
@@ -477,7 +554,7 @@ class DeepResearchAgent:
             summary_text = self.summarizer.summarize_task(state, task, context)
             self._drain_tool_events(state)
 
-        # step 5: update task with summary and mark completed
+        # Update task with summary and mark completed
         task.summary = summary_text.strip() if summary_text else "暂无可用信息"
         task.status = "completed"
 
