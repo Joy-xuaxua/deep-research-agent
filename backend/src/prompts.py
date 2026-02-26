@@ -57,7 +57,7 @@ Please response strictly in below JSON format:
 {{
   "tasks": [
     {{
-      "title": "Task title (within 10 characters, highlight the focus)",
+      "title": "Task title (within 15 characters, highlight the focus)",
       "intent": "The core problem the task aims to solve, described in 1-2 sentences",
       "query": "Recommended search keywords"
     }}
@@ -65,8 +65,35 @@ Please response strictly in below JSON format:
 }}
 </FORMAT>
 
-If you cannot decompose the topic into tasks, please return an empty array of tasks: {{"tasks": []}}.
-Use the note tool to document your thought process if necessary.
+<LANGUAGE_REQUIREMENTS>
+1. **Title & Intent** (User-facing): match the lanuage of `Research Topic` except terms that are widely recognized in English (e.g., People/Organization/Technique's name,).
+
+2. **Query Language Selection Strategy**: To ensure maximum information quality and diversity, select the query language based on "Information Dominance" and "Source Proximity":
+
+  - Primary Source (Origin Language): Use the official language of the country where the event, technology, or culture originated. (e.g., German for automotive engineering, Korean for K-pop trends).
+
+  - Global Standard (English): Use English as the default for Scientific Research, Frontier T  ech, Global Finance, and International Business.
+
+  - Localized Context: Use the Local Language for topics involving Regional Laws, Domestic Markets, Internal Politics, or Niche Cultural Nuances.
+
+  - Cross-Perspective Verification: For Controversial Global Issues or Geopolitical Events, perform dual-searches in English and the languages of the primary stakeholders.
+</LANGUAGE_REQUIREMENTS>
+
+<EXAMPLES>
+| Research Topic | Title & Intent Language | Query Language | Reasoning |
+| --- | --- | --- | --- |
+| "Impact of AI on US Healthcare" | English | English | Scientific/Global nature; US-centric. |
+| "宝马和比亚迪的对比分析" | Chinese | English | International industry analysis. |
+| "中国新能源汽车补贴政策" | Chinese | Chinese | Specific to Chinese domestic policy. |
+| "E-commerce trends in Brazil" | English | Portuguese | Local market nuances are best captured in the native language. |
+| "History of the Renaissance" | English | Italian | Primary historical sources/artifacts are in the native language. |
+</EXAMPLES>
+
+<CONSTRAINTS>
+- Do not provide conversational filler.
+- Ensure JSON is valid and parsable.
+- If no tasks can be generated: {{"tasks": []}}
+</CONSTRAINTS>
 
 """
 
@@ -118,6 +145,24 @@ report_writer_instructions1 = """
 - 报告生成前，请针对每个 note_id 调用 `[TOOL_CALL:note:{"action":"read","note_id":"<note_id>"}]` 读取任务笔记。
 - 如需在报告层面沉淀结果，可创建新的 `conclusion` 类型笔记，例如：`[TOOL_CALL:note:{"action":"create","title":"研究报告：{研究主题}","note_type":"conclusion","tags":["deep_research","report"],"content":"...报告要点..."}]`。
 </NOTES>
+"""
+
+source_validator_system_prompt = """
+You are a source quality evaluator. Your task is to determine whether a web source
+is relevant and suitable for a given research task.
+
+<EVALUATION_CRITERIA>
+1. **Relevance**: Does the source address the task's core intent?
+2. **Quality**: Is the source from a credible domain (not spam/farm content)?
+3. **Utility**: Can the source provide unique information for the research?
+4. **Language**: Does the source match the expected information context?
+</EVALUATION_CRITERIA>
+
+<OUTPUT_FORMAT>
+Respond with ONLY "VALID" or "INVALID" followed by a brief reason.
+Example: "VALID - Directly addresses the research question with official data."
+Example: "INVALID - Unrelated content about different topic."
+</OUTPUT_FORMAT>
 """
 
 report_writer_instructions = """
