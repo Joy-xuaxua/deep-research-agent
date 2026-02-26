@@ -89,22 +89,85 @@ class ToolCallTracker:
     # Draining helpers
     # ------------------------------------------------------------------
     def drain(self, state: SummaryState, *, step: Optional[int] = None) -> list[dict[str, Any]]:
-        """提取尚未消费的工具调用事件，并同步任务的 note_id。"""
+        """提取尚未消费的工具调用事件，并同步任务的 note_id。
 
+        这是一个消费者模式的生产者-消费者实现：
+        - record() 是生产者，不断向 _events 添加事件
+        - drain() 是消费者，提取并清空已消费的事件
+
+        Args:
+            state: 研究状态对象，包含 todo_items 用于关联 note_id
+            step: 可选的步骤号，用于前端事件关联
+
+        Returns:
+            SSE payload 列表，每个 payload 是一个可序列化的 dict
+        """
+
+        # ====================================================================
+        # Step 1: 获取线程锁，保证原子性操作
+        # 目的: 防止在读取 _events 时，其他线程通过 record() 添加新事件
+        # ====================================================================
         with self._lock:
+
+            # ====================================================================
+            # Step 2: 检查是否有新事件需要消费
+            # 目的: 避免不必要的处理，如果 cursor 已经到达末尾，直接返回空列表
+            #
+            # _cursor 的语义: "已消费到哪个位置"
+            # - 初始值: 0
+            # - 每次 drain: 更新到 len(_events)
+            # - 如果 cursor >= len: 说明所有事件都已消费
+            # ====================================================================
             if self._cursor >= len(self._events):
-                return []
+                return []  # 无新事件，提前返回
+
+            # ====================================================================
+            # Step 3: 提取新事件切片（cursor 到末尾）
+            # 目的: 只获取上次 drain 之后新增的事件
+            #
+            # 例如:
+            # _events = [event1, event2, event3, event4, event5]
+            # _cursor = 2
+            # new_events = [event3, event4, event5]  # 只取未消费的
+            # _cursor = 5  # 更新游标，标记这些事件已消费
+            # ====================================================================
             new_events = self._events[self._cursor :]
             self._cursor = len(self._events)
 
+        # ====================================================================
+        # Step 4: 释放锁，继续处理（此时其他线程可以 record 新事件）
+        # ====================================================================
+
+        # ====================================================================
+        # Step 5: 同步 note_id 到对应的 TodoItem
+        # 目的: 当 agent 创建笔记时，将 note_id 关联到对应的 task
+        #
+        # 这个关联很重要，因为:
+        # - TodoItem 创建时没有 note_id
+        # - NoteTool 被调用时会创建笔记并返回 note_id
+        # - 需要将这个 note_id 写回到 TodoItem，供后续使用（如归档）
+        # ====================================================================
         if state.todo_items:
             for event in new_events:
                 task_id = event.task_id
                 note_id = event.note_id
+
+                # 跳过没有 task_id 或 note_id 的事件
                 if task_id is None or not note_id:
                     continue
+
+                # 将 note_id 附加到对应的 TodoItem
                 self._attach_note_to_task(state.todo_items, task_id, note_id)
 
+        # ====================================================================
+        # Step 6: 构建 SSE payload 列表
+        # 目的: 将内部 ToolCallEvent 对象转换为前端可用的字典格式
+        #
+        # 转换内容:
+        # - 添加 "type": "tool_call" 用于前端事件路由
+        # - 添加 step 用于前端显示进度
+        # - 添加 note_path 如果有 workspace 路径
+        # ====================================================================
         payloads: list[dict[str, Any]] = []
         for event in new_events:
             payload = self._build_payload(event, step=step)
