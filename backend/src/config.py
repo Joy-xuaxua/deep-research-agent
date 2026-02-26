@@ -96,6 +96,21 @@ class Configuration(BaseModel):
         title="Archives Directory",
         description="Directory for storing completed research archives",
     )
+    enable_source_validation: bool = Field(
+        default=True,
+        title="Enable Source Validation",
+        description="Whether to validate search result quality using LLM before fetching full content",
+    )
+    min_valid_sources_threshold: int = Field(
+        default=3,
+        title="Minimum Valid Sources Threshold",
+        description="Minimum number of valid sources required before proceeding to summarization",
+    )
+    max_search_retries: int = Field(
+        default=3,
+        title="Maximum Search Retries",
+        description="Maximum number of search rounds to find valid sources",
+    )
 
     @classmethod
     def from_env(cls, overrides: Optional[dict[str, Any]] = None) -> "Configuration":
@@ -127,6 +142,9 @@ class Configuration(BaseModel):
             "notes_workspace": os.getenv("NOTES_WORKSPACE"),
             "enable_archiving": os.getenv("ENABLE_ARCHIVING"),
             "archives_dir": os.getenv("ARCHIVES_DIR"),
+            "enable_source_validation": os.getenv("ENABLE_SOURCE_VALIDATION"),
+            "min_valid_sources_threshold": os.getenv("MIN_VALID_SOURCES_THRESHOLD"),
+            "max_search_retries": os.getenv("MAX_SEARCH_RETRIES"),
         }
 
         for key, value in env_aliases.items():
