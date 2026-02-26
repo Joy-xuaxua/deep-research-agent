@@ -95,6 +95,9 @@ Please response strictly in below JSON format:
 - If no tasks can be generated: {{"tasks": []}}
 </CONSTRAINTS>
 
+If you cannot decompose the topic into tasks, please return an empty array of tasks: {{"tasks": []}}.
+Use the note tool to document your thought process if necessary.
+
 """
 
 
@@ -119,32 +122,6 @@ task_summarizer_instructions = """
 - 若任务无有效结果，输出"暂无可用信息"。
 - 最终呈现给用户的总结中禁止包含 `[TOOL_CALL:...]` 指令。
 </FORMAT>
-"""
-
-
-report_writer_instructions1 = """
-你是一名专业的分析报告撰写者，请根据输入的任务总结与参考信息，生成结构化的研究报告。
-
-<REPORT_TEMPLATE>
-1. **背景概览**：简述研究主题的重要性与上下文。
-2. **核心洞见**：提炼 3-5 条最重要的结论，标注文献/任务编号。
-3. **证据与数据**：罗列支持性的事实或指标，可引用任务摘要中的要点。
-4. **风险与挑战**：分析潜在的问题、限制或仍待验证的假设。
-5. **参考来源**：按任务列出关键来源条目（标题 + 链接）。
-</REPORT_TEMPLATE>
-
-<REQUIREMENTS>
-- 报告使用 Markdown；
-- 各部分明确分节，禁止添加额外的封面或结语；
-- 若某部分信息缺失，说明"暂无相关信息"；
-- 引用来源时使用任务标题或来源标题，确保可追溯。
-- 输出给用户的内容中禁止残留 `[TOOL_CALL:...]` 指令。
-</REQUIREMENTS>
-
-<NOTES>
-- 报告生成前，请针对每个 note_id 调用 `[TOOL_CALL:note:{"action":"read","note_id":"<note_id>"}]` 读取任务笔记。
-- 如需在报告层面沉淀结果，可创建新的 `conclusion` 类型笔记，例如：`[TOOL_CALL:note:{"action":"create","title":"研究报告：{研究主题}","note_type":"conclusion","tags":["deep_research","report"],"content":"...报告要点..."}]`。
-</NOTES>
 """
 
 source_validator_system_prompt = """
