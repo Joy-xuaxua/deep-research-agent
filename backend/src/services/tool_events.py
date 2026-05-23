@@ -54,9 +54,12 @@ class ToolCallTracker:
         note_id: Optional[str] = None
 
         if tool_name == "note":
-            note_id = parsed_parameters.get("note_id")
+            raw_note_id = parsed_parameters.get("note_id")
+            if raw_note_id is not None:
+                note_id = str(raw_note_id)
             if note_id is None:
-                note_id = self._extract_note_id(result_text)
+                extracted = self._extract_note_id(result_text)
+                note_id = str(extracted) if extracted is not None else None
 
         event = ToolCallEvent(
             id=len(self._events) + 1,

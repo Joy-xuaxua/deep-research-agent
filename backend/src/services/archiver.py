@@ -19,7 +19,11 @@ def extract_timestamp_from_note_id(note_id: str) -> Optional[str]:
     Returns:
         The timestamp string (YYYYMMDD_HHMMSS), or None if not found
     """
-    match = re.match(r'note_(\d{8})_(\d{6})_', note_id)
+    # Handle case where note_id might be an integer (e.g., from parsed_parameters)
+    if note_id is None:
+        return None
+    note_id_str = str(note_id)
+    match = re.match(r'note_(\d{8})_(\d{6})_', note_id_str)
     if match:
         return f"{match.group(1)}_{match.group(2)}"
     return None
