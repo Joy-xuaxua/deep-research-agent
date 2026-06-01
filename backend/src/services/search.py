@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 MAX_TOKENS_PER_SOURCE = 2000
 CHARS_PER_TOKEN = 4
+KEIRO_API_URL = "https://kierolabs.space/api/v2/keiro"
+KEIRO_DEFAULT_MAX_RESULTS = 5
 _GLOBAL_SEARCH_TOOL = SearchTool(backend="hybrid")
 
 
@@ -52,6 +54,28 @@ def dispatch_search(
     )
 
     try:
+        # Keiro: direct API call, bypasses HelloAgents SearchTool
+        if search_api == "keiro":
+            payload = _search_keiro(query, config)
+            notices = list(payload.get("notices") or [])
+            backend_label = str(payload.get("backend") or search_api)
+            answer_text = payload.get("answer")
+            results = payload.get("results", [])
+
+            if notices:
+                for notice in notices:
+                    logger.info("Search notice (%s): %s", backend_label, notice)
+
+            logger.info(
+                "Search backend=%s resolved_backend=%s answer=%s results=%s",
+                search_api,
+                backend_label,
+                bool(answer_text),
+                len(results),
+            )
+
+            return payload, notices, answer_text, backend_label
+
         raw_response = _GLOBAL_SEARCH_TOOL.run(
             {
                 "input": query,
@@ -148,6 +172,10 @@ def fetch_full_content_for_sources(
     if search_api == "perplexity":
         return _fetch_perplexity_content(sources, config)
 
+    # P1: Keiro (no dedicated extract endpoint, use httpx fallback)
+    if search_api == "keiro":
+        return _fetch_with_httpx(sources, config)
+
     # P1: Fallback for other backends
     logger.warning(
         f"Full content fetch not yet supported for {search_api}, using lightweight sources only"
@@ -209,6 +237,82 @@ def _fetch_perplexity_content(sources: list[dict], config: Configuration) -> lis
     """
     # Fallback to generic httpx approach
     return _fetch_with_httpx(sources, config)
+
+
+def _search_keiro(query: str, config: Configuration) -> dict[str, Any]:
+    """Search using Keiro API (https://kierolabs.space/api/v2/keiro).
+
+    Calls the Keiro search service directly and normalises the response
+    into the standard search result payload format.
+
+    Args:
+        query: The search query string
+        config: Configuration object with keiro_api_key
+
+    Returns:
+        Standardised payload dict with results, backend, answer, notices
+    """
+    api_key = config.keiro_api_key or os.getenv("KEIRO_API_KEY")
+    if not api_key:
+        raise ValueError("KEIRO_API_KEY is required for keiro search backend")
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    request_payload = {
+        "query": query,
+        "maxResults": KEIRO_DEFAULT_MAX_RESULTS,
+    }
+
+    response = httpx.post(
+        KEIRO_API_URL,
+        json=request_payload,
+        headers=headers,
+        timeout=30,
+    )
+    response.raise_for_status()
+    data = response.json()
+
+    # Normalise keiro response to standard payload format
+    # Keiro returns results in a top-level array or nested under a key;
+    # handle both common patterns and map to {title, url, content}.
+    raw_results = []
+
+    # Pattern 1: {"results": [...]}
+    if isinstance(data, dict) and "results" in data:
+        raw_results = data["results"]
+    # Pattern 2: top-level list
+    elif isinstance(data, list):
+        raw_results = data
+    # Pattern 3: single dict wrapper with data/docs/items
+    elif isinstance(data, dict):
+        for key in ("data", "docs", "items", "sources"):
+            if key in data and isinstance(data[key], list):
+                raw_results = data[key]
+                break
+
+    normalised_results: list[dict[str, Any]] = []
+    for item in raw_results:
+        if not isinstance(item, dict):
+            continue
+        normalised_results.append({
+            "title": item.get("title") or item.get("name") or "",
+            "url": item.get("url") or item.get("link") or item.get("href") or "",
+            "content": item.get("content") or item.get("snippet") or item.get("text") or item.get("description") or "",
+        })
+
+    # Check for a direct AI-style answer in the response
+    answer = None
+    if isinstance(data, dict):
+        answer = data.get("answer") or data.get("summary") or None
+
+    return {
+        "results": normalised_results,
+        "backend": "keiro",
+        "answer": answer,
+        "notices": [],
+    }
 
 
 def _fetch_with_httpx(sources: list[dict], config: Configuration) -> list[dict]:

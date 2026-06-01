@@ -11,6 +11,7 @@ class SearchAPI(Enum):
     DUCKDUCKGO = "duckduckgo"
     SEARXNG = "searxng"
     ADVANCED = "advanced"
+    KEIRO = "keiro"
 
 
 class Configuration(BaseModel):
@@ -111,6 +112,11 @@ class Configuration(BaseModel):
         title="Maximum Search Retries",
         description="Maximum number of search rounds to find valid sources",
     )
+    keiro_api_key: Optional[str] = Field(
+        default=None,
+        title="Keiro API Key",
+        description="API key for the Keiro search service (kierolabs.space)",
+    )
 
     @classmethod
     def from_env(cls, overrides: Optional[dict[str, Any]] = None) -> "Configuration":
@@ -145,6 +151,7 @@ class Configuration(BaseModel):
             "enable_source_validation": os.getenv("ENABLE_SOURCE_VALIDATION"),
             "min_valid_sources_threshold": os.getenv("MIN_VALID_SOURCES_THRESHOLD"),
             "max_search_retries": os.getenv("MAX_SEARCH_RETRIES"),
+            "keiro_api_key": os.getenv("KEIRO_API_KEY"),
         }
 
         for key, value in env_aliases.items():
