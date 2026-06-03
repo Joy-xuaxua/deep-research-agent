@@ -57,16 +57,16 @@ class DeepResearchAgent:
         self._state_lock = Lock()
 
         self.todo_agent = self._create_tool_aware_agent(
-            name="研究规划专家",
+            name="Research_Strategist",
             system_prompt=todo_planner_system_prompt.strip(),
         )
         self.report_agent = self._create_tool_aware_agent(
-            name="报告撰写专家",
+            name="Report_Synthesizer",
             system_prompt=report_writer_instructions.strip(),
         )
 
         self._summarizer_factory: Callable[[], ToolAwareSimpleAgent] = lambda: self._create_tool_aware_agent(  # noqa: E501
-            name="任务总结专家",
+            name="Task_Summarizer",
             system_prompt=task_summarizer_instructions.strip(),
         )
 
@@ -85,7 +85,7 @@ class DeepResearchAgent:
 
         # Initialize validation agent and validator service
         self.validation_agent = self._create_tool_aware_agent(
-            name="信息源验证专家",
+            name="Fact_Checker",
             system_prompt=source_validator_system_prompt.strip(),
         )
         self.validator: Any | None = None  # Will be imported when needed
