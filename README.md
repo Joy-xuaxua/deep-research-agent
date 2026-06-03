@@ -25,6 +25,9 @@ This is **HelloAgents Deep Researcher** - a fully local web research and summari
 ```bash
 cd backend
 
+# Enter virual environment
+.venv\Scripts\Activate.ps1
+
 # Install dependencies (uses uv)
 uv sync
 
@@ -39,6 +42,7 @@ uv run ruff check src/
 # Run type checking (mypy)
 uv run mypy src/
 ```
+
 
 ### Frontend
 
