@@ -109,12 +109,6 @@ task_summarizer_instructions = """
 2. 清晰说明每条发现的含义与价值，可引用事实数据；
 </GOAL>
 
-<NOTES>
-- 任务笔记由规划专家创建，笔记 ID 会在调用时提供；请先调用 `[TOOL_CALL:note:{"action":"read","note_id":"<note_id>"}]` 获取最新状态。
-- 更新任务总结后，使用 `[TOOL_CALL:note:{"action":"update","note_id":"<note_id>","task_id":{task_id},"title":"任务 {task_id}: …","note_type":"task_state","tags":["deep_research","task_{task_id}"],"content":"..."}]` 写回笔记，保持原有结构并追加新信息。
-- 若未找到笔记 ID，请先创建并在 `tags` 中包含 `task_{task_id}` 后再继续。
-</NOTES>
-
 <FORMAT>
 - 使用 Markdown 输出；
 - 以小节标题开头："任务总结"；

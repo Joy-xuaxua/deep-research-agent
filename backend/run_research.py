@@ -10,8 +10,8 @@ import requests
 
 # Configuration
 API_BASE_URL = "http://localhost:8000"
-RESEARCH_TOPIC = "2025年talking face generation在商业中的最新应用和效果"
-USE_STREAMING = True  # Set to False for non-streaming mode
+RESEARCH_TOPIC = "talking face generation在商业中的最新应用和效果"
+USE_STREAMING = False  # Set to False for non-streaming mode
 
 
 def print_event(event: dict[str, Any]) -> None:

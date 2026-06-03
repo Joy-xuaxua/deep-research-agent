@@ -10,7 +10,6 @@ from hello_agents import ToolAwareSimpleAgent
 from models import SummaryState, TodoItem
 from config import Configuration
 from utils import strip_thinking_tokens
-from services.notes import build_note_guidance
 from services.text_processing import strip_tool_calls
 
 
@@ -120,6 +119,5 @@ class SummarizationService:
             f"任务目标：{task.intent}\n"
             f"检索查询：{task.query}\n"
             f"任务上下文：\n{context}\n"
-            f"{build_note_guidance(task)}\n"
-            "请按照以上协作要求先同步笔记，然后返回一份面向用户的 Markdown 总结（仍遵循任务总结模板）。"
+            "请直接返回一份面向用户的 Markdown 总结（遵循任务总结模板）。"
         )
