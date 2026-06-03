@@ -117,6 +117,11 @@ class Configuration(BaseModel):
         title="Keiro API Key",
         description="API key for the Keiro search service (kierolabs.space)",
     )
+    log_llm_responses: bool = Field(
+        default=False,
+        title="Log LLM Responses",
+        description="Whether to print LLM response chunks to console (set LOG_LLM_RESPONSES=True to enable)",
+    )
 
     @classmethod
     def from_env(cls, overrides: Optional[dict[str, Any]] = None) -> "Configuration":
@@ -152,6 +157,7 @@ class Configuration(BaseModel):
             "min_valid_sources_threshold": os.getenv("MIN_VALID_SOURCES_THRESHOLD"),
             "max_search_retries": os.getenv("MAX_SEARCH_RETRIES"),
             "keiro_api_key": os.getenv("KEIRO_API_KEY"),
+            "log_llm_responses": os.getenv("LOG_LLM_RESPONSES"),
         }
 
         for key, value in env_aliases.items():

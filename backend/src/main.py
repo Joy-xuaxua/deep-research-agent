@@ -99,7 +99,8 @@ def create_app() -> FastAPI:
 
         logger.info(
             "DeepResearch configuration loaded: provider=%s model=%s base_url=%s search_api=%s "
-            "max_loops=%s fetch_full_page=%s tool_calling=%s strip_thinking=%s api_key=%s",
+            "max_loops=%s fetch_full_page=%s tool_calling=%s strip_thinking=%s api_key=%s "
+            "log_llm_responses=%s",
             config.llm_provider,
             config.resolved_model() or "unset",
             base_url,
@@ -109,7 +110,29 @@ def create_app() -> FastAPI:
             config.use_tool_calling,
             config.strip_thinking_tokens,
             _mask_secret(config.llm_api_key),
+            config.log_llm_responses,
         )
+
+        # Suppress hello-agents internal print() of LLM response chunks
+        if not config.log_llm_responses:
+            from hello_agents.core.llm import HelloAgentsLLM
+
+            def _quiet_think(self, messages, temperature=None):
+                """Same as original think() but without print() calls."""
+                response = self._client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    temperature=temperature if temperature is not None else self.temperature,
+                    max_tokens=self.max_tokens,
+                    stream=True,
+                )
+                for chunk in response:
+                    content = chunk.choices[0].delta.content or ""
+                    if content:
+                        yield content
+
+            HelloAgentsLLM.think = _quiet_think
+            logger.info("LLM response logging suppressed (set LOG_LLM_RESPONSES=True to enable)")
 
     @app.get("/healthz")
     def health_check() -> Dict[str, str]:
