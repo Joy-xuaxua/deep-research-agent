@@ -84,7 +84,7 @@ def run_research_streaming(topic: str, base_url: str = API_BASE_URL) -> None:
     print("-" * 60)
 
     try:
-        with requests.post(url, json=payload, stream=True, timeout=300) as response:
+        with requests.post(url, json=payload, stream=True, timeout=1500) as response:
             if response.status_code != 200:
                 print(f"Error: HTTP {response.status_code}", file=sys.stderr)
                 print(response.text, file=sys.stderr)
@@ -125,7 +125,7 @@ def run_research_non_streaming(topic: str, base_url: str = API_BASE_URL) -> dict
     print("-" * 60)
 
     try:
-        response = requests.post(url, json=payload, timeout=300)
+        response = requests.post(url, json=payload, timeout=1500)
         response.raise_for_status()
 
         data = response.json()
