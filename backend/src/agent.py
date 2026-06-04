@@ -558,6 +558,9 @@ class DeepResearchAgent:
         task.summary = summary_text.strip() if summary_text else "暂无可用信息"
         task.status = "completed"
 
+        # Save task note programmatically (not via LLM tool call)
+        self._save_task_note(state, task)
+
         if emit_stream:
             for event in self._drain_tool_events(state, step=step):
                 yield event
@@ -692,6 +695,59 @@ class DeepResearchAgent:
             payload["note_path"] = str(note_path)
 
         return payload
+
+    def _save_task_note(self, state: SummaryState, task: TodoItem) -> None:
+        """Save task summary to a note programmatically after summarization.
+
+        This mirrors _persist_final_report() but for individual task notes.
+        Called after task.summary is populated, regardless of whether the LLM
+        already created a note via tool call (which often has only placeholder content).
+
+        Args:
+            state: The shared research state
+            task: The completed TodoItem with summary and sources_summary populated
+        """
+        if not self.note_tool or not task.summary:
+            return
+
+        note_title = f"任务 {task.id}: {task.title}"
+        tags = ["deep_research", f"task_{task.id}"]
+
+        # Build note content from the complete summary
+        parts = [f"检索查询：{task.query}"]
+        if task.sources_summary:
+            parts.append(f"\n## 来源概览\n{task.sources_summary}")
+        parts.append(f"\n## 研究总结\n{task.summary}")
+        content = "\n".join(parts)
+
+        if task.note_id:
+            # Update existing note (may have been created by LLM with placeholder content)
+            self.note_tool.run(
+                {
+                    "action": "update",
+                    "note_id": task.note_id,
+                    "title": note_title,
+                    "note_type": "task_state",
+                    "tags": tags,
+                    "content": content,
+                }
+            )
+        else:
+            # Create new note
+            response = self.note_tool.run(
+                {
+                    "action": "create",
+                    "title": note_title,
+                    "note_type": "task_state",
+                    "tags": tags,
+                    "content": content,
+                }
+            )
+            note_id = self._extract_note_id_from_text(response)
+            if note_id:
+                task.note_id = note_id
+                if self.config.notes_workspace:
+                    task.note_path = str(Path(self.config.notes_workspace) / f"{note_id}.md")
 
     def _find_existing_report_note_id(self, state: SummaryState) -> str | None:
         """Search for an existing report note ID to avoid duplication.
