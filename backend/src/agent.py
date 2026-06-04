@@ -24,8 +24,8 @@ from models import SummaryState, SummaryStateOutput, TodoItem
 from services.archiver import NoteArchiver
 from services.planner import PlanningService
 from services.reporter import ReportingService
-from services.search import dispatch_search, fetch_full_content_for_sources, prepare_research_context
 from services.summarizer import SummarizationService
+from services.task_executor import TaskExecutor
 from services.tool_events import ToolCallTracker
 
 logger = logging.getLogger(__name__)
@@ -88,10 +88,21 @@ class DeepResearchAgent:
             name="Fact_Checker",
             system_prompt=source_validator_system_prompt.strip(),
         )
-        self.validator: Any | None = None  # Will be imported when needed
+        self.validator: Any | None = None
         if self.config.enable_source_validation:
             from services.validator import SourceValidator
             self.validator = SourceValidator(self.validation_agent, self.config)
+
+        # Task executor (delegates search → validate → fetch → summarize)
+        # Must be created AFTER self.validator is set
+        self._task_executor = TaskExecutor(
+            config=self.config,
+            summarizer=self.summarizer,
+            tool_tracker=self._tool_tracker,
+            note_tool=self.note_tool,
+            validator=self.validator,
+            state_lock=self._state_lock,
+        )
 
     # ------------------------------------------------------------------
     # Public API
@@ -377,211 +388,17 @@ class DeepResearchAgent:
         emit_stream: bool,
         step: int | None = None,
     ) -> Iterator[dict[str, Any]]:
-        """Run search + summarization for a single task with two-stage search.
+        """Delegate single-task execution to the TaskExecutor.
 
-        Core research workflow with source validation:
-        Stage 1: Lightweight search (title + snippet only)
-        Stage 2: Validate source quality using LLM
-        Stage 3: Fetch full content only for valid sources
-        Stage 4: Summarize and update task state
-
-        Args:
-            state: The shared research state object
-            task: The TODO task to execute
-            emit_stream: If True, yield progress events; if False, run silently
-            step: Optional step number for event correlation in streaming mode
-
-        Yields:
-            dict[str, Any]: Progress events when emit_stream=True
+        Thin wrapper that syncs the mutable last-search-notices list after
+        each execution so callers that still read ``_last_search_notices``
+        continue to work.
         """
-        task.status = "in_progress"
-
-        # Configure search retry parameters
-        max_search_rounds = self.config.max_search_retries
-        min_valid_sources = self.config.min_valid_sources_threshold
-        valid_sources: list[dict] = []
-        search_round = 0
-        search_result: dict[str, Any] | None = None
-        answer_text: str | None = None
-        backend = ""
-
-        # === Two-stage search with retry loop ===
-        while search_round < max_search_rounds:
-            search_round += 1
-
-            # === Stage 1: Lightweight search (fetch_full_page=False) ===
-            search_result, notices, answer_text, backend = dispatch_search(
-                task.query,
-                self.config,
-                state.research_loop_count,
-                fetch_full_page=False,  # Key: Don't fetch full content yet
-            )
-            self._last_search_notices = notices
-            task.notices = notices
-
-            if emit_stream:
-                for event in self._drain_tool_events(state, step=step):
-                    yield event
-            else:
-                self._drain_tool_events(state)
-
-            if notices and emit_stream:
-                for notice in notices:
-                    if notice:
-                        yield {
-                            "type": "status",
-                            "message": notice,
-                            "task_id": task.id,
-                            "step": step,
-                        }
-
-            # Handle empty search results - continue to next round
-            if not search_result or not search_result.get("results"):
-                logger.info("Search round %d: No results for task %d", search_round, task.id)
-                continue
-
-            lightweight_sources = search_result.get("results", [])
-
-            # === Stage 2: Validate source quality (based on title + snippet) ===
-            if self.validator:
-                # Use validator service to filter sources
-                valid_sources, invalid_sources = self.validator.validate_sources(
-                    lightweight_sources,  # Only use lightweight metadata
-                    task.intent,
-                    task.query,
-                )
-
-                # Emit filtered sources event for frontend transparency
-                if emit_stream and invalid_sources:
-                    yield {
-                        "type": "sources_filtered",
-                        "task_id": task.id,
-                        "filtered_count": len(invalid_sources),
-                        "valid_count": len(valid_sources),
-                        "round": search_round,
-                        "step": step,
-                    }
-
-                # If we have enough valid sources, exit the retry loop
-                if len(valid_sources) >= min_valid_sources:
-                    logger.info(
-                        "Search round %d: Found %d valid sources (threshold: %d)",
-                        search_round, len(valid_sources), min_valid_sources
-                    )
-                    break
-                else:
-                    logger.info(
-                        "Search round %d: Only %d valid sources (threshold: %d), continuing...",
-                        search_round, len(valid_sources), min_valid_sources
-                    )
-            else:
-                # Validation disabled, use all sources
-                valid_sources = lightweight_sources
-                break
-
-        # === Stage 3: Fetch full content only for valid sources ===
-        if self.config.fetch_full_page and valid_sources:
-            valid_sources = fetch_full_content_for_sources(
-                valid_sources,
-                self.config,
-            )
-
-        # Handle case where no valid sources were found after all retries
-        if not valid_sources:
-            task.status = "skipped"
-            if emit_stream:
-                for event in self._drain_tool_events(state, step=step):
-                    yield event
-                yield {
-                    "type": "task_status",
-                    "task_id": task.id,
-                    "status": "skipped",
-                    "title": task.title,
-                    "intent": task.intent,
-                    "note_id": task.note_id,
-                    "note_path": task.note_path,
-                    "step": step,
-                }
-            else:
-                self._drain_tool_events(state)
-            return
-
-        # Prepare research context with valid sources (now with full content)
-        search_result = {"results": valid_sources, "backend": backend}
-        sources_summary, context = prepare_research_context(
-            search_result,
-            answer_text,
-            self.config,
+        self._task_executor._tool_event_sink_enabled = self._tool_event_sink_enabled
+        yield from self._task_executor.execute_task(
+            state, task, emit_stream=emit_stream, step=step,
         )
-
-        task.sources_summary = sources_summary
-
-        with self._state_lock:
-            state.web_research_results.append(context)
-            state.sources_gathered.append(sources_summary)
-            state.research_loop_count += 1
-
-        summary_text: str | None = None
-
-        # === Stage 4: Execute summarization (streaming or blocking) ===
-        if emit_stream:
-            for event in self._drain_tool_events(state, step=step):
-                yield event
-
-            yield {
-                "type": "sources",
-                "task_id": task.id,
-                "latest_sources": sources_summary,
-                "raw_context": context,
-                "step": step,
-                "backend": backend,
-                "note_id": task.note_id,
-                "note_path": task.note_path,
-            }
-
-            summary_stream, summary_getter = self.summarizer.stream_task_summary(state, task, context)
-            try:
-                for event in self._drain_tool_events(state, step=step):
-                    yield event
-                for chunk in summary_stream:
-                    if chunk:
-                        yield {
-                            "type": "task_summary_chunk",
-                            "task_id": task.id,
-                            "content": chunk,
-                            "note_id": task.note_id,
-                            "step": step,
-                        }
-                    for event in self._drain_tool_events(state, step=step):
-                        yield event
-            finally:
-                summary_text = summary_getter()
-        else:
-            summary_text = self.summarizer.summarize_task(state, task, context)
-            self._drain_tool_events(state)
-
-        # Update task with summary and mark completed
-        task.summary = summary_text.strip() if summary_text else "暂无可用信息"
-        task.status = "completed"
-
-        # Save task note programmatically (not via LLM tool call)
-        self._save_task_note(state, task)
-
-        if emit_stream:
-            for event in self._drain_tool_events(state, step=step):
-                yield event
-            yield {
-                "type": "task_status",
-                "task_id": task.id,
-                "status": "completed",
-                "summary": task.summary,
-                "sources_summary": task.sources_summary,
-                "note_id": task.note_id,
-                "note_path": task.note_path,
-                "step": step,
-            }
-        else:
-            self._drain_tool_events(state)
+        self._last_search_notices = self._task_executor.last_search_notices
 
     def _drain_tool_events(
         self,
@@ -702,59 +519,6 @@ class DeepResearchAgent:
 
         return payload
 
-    def _save_task_note(self, state: SummaryState, task: TodoItem) -> None:
-        """Save task summary to a note programmatically after summarization.
-
-        This mirrors _persist_final_report() but for individual task notes.
-        Called after task.summary is populated, regardless of whether the LLM
-        already created a note via tool call (which often has only placeholder content).
-
-        Args:
-            state: The shared research state
-            task: The completed TodoItem with summary and sources_summary populated
-        """
-        if not self.note_tool or not task.summary:
-            return
-
-        note_title = f"任务 {task.id}: {task.title}"
-        tags = ["deep_research", f"task_{task.id}"]
-
-        # Build note content from the complete summary
-        parts = [f"检索查询：{task.query}"]
-        if task.sources_summary:
-            parts.append(f"\n## 来源概览\n{task.sources_summary}")
-        parts.append(f"\n## 研究总结\n{task.summary}")
-        content = "\n".join(parts)
-
-        if task.note_id:
-            # Update existing note (may have been created by LLM with placeholder content)
-            self.note_tool.run(
-                {
-                    "action": "update",
-                    "note_id": task.note_id,
-                    "title": note_title,
-                    "note_type": "task_state",
-                    "tags": tags,
-                    "content": content,
-                }
-            )
-        else:
-            # Create new note
-            response = self.note_tool.run(
-                {
-                    "action": "create",
-                    "title": note_title,
-                    "note_type": "task_state",
-                    "tags": tags,
-                    "content": content,
-                }
-            )
-            note_id = self._extract_note_id_from_text(response)
-            if note_id:
-                task.note_id = note_id
-                if self.config.notes_workspace:
-                    task.note_path = str(Path(self.config.notes_workspace) / f"{note_id}.md")
-
     def _find_existing_report_note_id(self, state: SummaryState) -> str | None:
         """Search for an existing report note ID to avoid duplication.
 
@@ -803,13 +567,12 @@ class DeepResearchAgent:
 
     @staticmethod
     def _extract_note_id_from_text(response: str) -> str | None:
+        """Extract note ID from NoteTool response text."""
         if not response:
             return None
-
         match = re.search(r"ID:\s*([^\n]+)", response)
         if not match:
             return None
-
         return match.group(1).strip()
 
     def _archive_research_notes(
