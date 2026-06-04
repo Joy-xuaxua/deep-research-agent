@@ -114,10 +114,11 @@ class SummarizationService:
         """Construct the summarization prompt shared by both modes."""
 
         return (
-            f"任务主题：{state.research_topic}\n"
-            f"任务名称：{task.title}\n"
-            f"任务目标：{task.intent}\n"
-            f"检索查询：{task.query}\n"
-            f"任务上下文：\n{context}\n"
-            "请直接返回一份面向用户的 Markdown 总结（遵循任务总结模板）。"
+            f"Research Topic: {state.research_topic}\n"
+            f"Task Title: {task.title}\n"
+            f"Task Objective: {task.intent}\n"
+            f"Search Query: {task.query}\n"
+            f"Search Results:\n{context}\n\n"
+            "Based on the search results above, produce a faithful, multi-dimensional summary "
+            "following the Task Summary format. Remember: compress, do not create."
         )
