@@ -180,7 +180,13 @@ class DeepResearchAgent:
             state.todo_items = [self.planner.create_fallback_task(state)]
 
         for task in state.todo_items:
-            self._execute_task(state, task, emit_stream=False)
+            # _execute_task is a generator function (contains yield), so calling
+            # it returns a generator object without executing the body.  We must
+            # consume the generator to actually run the task logic and update
+            # task status.  When emit_stream=False no events are yielded, so the
+            # loop body is effectively a no-op but forces eager execution.
+            for _ in self._execute_task(state, task, emit_stream=False):
+                pass
 
         report = self.reporting.generate_report(state)
         self._drain_tool_events(state)
