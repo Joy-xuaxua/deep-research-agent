@@ -171,7 +171,9 @@ class TaskExecutor:
 
         # === Stage 3: Fetch full content only for valid sources ===
         if self.config.fetch_full_page and valid_sources:
-            valid_sources = fetch_full_content_for_sources(valid_sources, self.config)
+            valid_sources = fetch_full_content_for_sources(
+                valid_sources, self.config, research_topic=state.research_topic,
+            )
 
         # No sources survived validation — mark skipped so the frontend can
         # update the UI instead of showing an infinite spinner.

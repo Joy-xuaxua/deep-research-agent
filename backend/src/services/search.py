@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import datetime
+import hashlib
 import logging
 import os
+from pathlib import Path
 from typing import Any, Optional, Tuple
 
 import httpx
 from hello_agents.tools import SearchTool
 
 from config import Configuration
+from services.archiver import sanitize_topic
 from utils import (
     deduplicate_and_format_sources,
     format_sources,
@@ -23,6 +27,46 @@ CHARS_PER_TOKEN = 4
 KEIRO_API_URL = "https://kierolabs.space/api/v2/keiro"
 KEIRO_DEFAULT_MAX_RESULTS = 5
 _GLOBAL_SEARCH_TOOL = SearchTool(backend="hybrid")
+
+# Directory for persisting fetched website content
+WEBSITES_INFO_DIR = Path(__file__).resolve().parent.parent.parent / "websites_info"
+
+
+def _save_raw_content(source: dict, session_dir: Path) -> None:
+    """Persist raw_content of a source to a markdown file in session_dir.
+
+    Args:
+        source: Source dict with 'url', 'title', and 'raw_content' keys.
+        session_dir: Per-session directory under websites_info/.
+    """
+    content = source.get("raw_content", "")
+    if not content:
+        return
+
+    try:
+        session_dir.mkdir(parents=True, exist_ok=True)
+
+        # Build safe filename: domain + short hash of URL
+        url = source.get("url", "unknown")
+        domain = url.split("//")[-1].split("/")[0] if "//" in url else "unknown"
+        url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+        filename = f"{domain}_{url_hash}.md"
+
+        filepath = session_dir / filename
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        title = source.get("title", url)
+
+        file_content = (
+            f"# {title}\n"
+            f"- **URL**: {url}\n"
+            f"- **Fetched**: {now}\n\n"
+            f"{content}"
+        )
+
+        filepath.write_text(file_content, encoding="utf-8")
+        logger.debug("Saved raw content to %s", filepath)
+    except Exception as exc:
+        logger.warning("Failed to save raw content for %s: %s", source.get("url", "unknown"), exc)
 
 
 def dispatch_search(
@@ -146,6 +190,8 @@ def prepare_research_context(
 def fetch_full_content_for_sources(
     sources: list[dict],
     config: Configuration,
+    *,
+    research_topic: str | None = None,
 ) -> list[dict]:
     """Fetch full page content for validated sources.
 
@@ -158,6 +204,7 @@ def fetch_full_content_for_sources(
     Args:
         sources: List of source dictionaries with url field
         config: Configuration object with API keys
+        research_topic: Optional topic for per-session file organization
 
     Returns:
         List of sources with added raw_content field
@@ -166,7 +213,7 @@ def fetch_full_content_for_sources(
 
     # P0: Tavily
     if search_api == "tavily":
-        return _fetch_tavily_content(sources, config)
+        return _fetch_tavily_content(sources, config, research_topic=research_topic)
 
     # P0: Perplexity
     if search_api == "perplexity":
@@ -183,15 +230,24 @@ def fetch_full_content_for_sources(
     return sources
 
 
-def _fetch_tavily_content(sources: list[dict], config: Configuration) -> list[dict]:
+def _fetch_tavily_content(
+    sources: list[dict],
+    config: Configuration,
+    *,
+    research_topic: str | None = None,
+) -> list[dict]:
     """Fetch full content using Tavily Extract API.
 
     Tavily has a dedicated /extract endpoint for fetching full page content.
     See: https://docs.tavily.com/docs/tavily-api/rest/endpoints/extract
 
+    When research_topic is provided, fetched content is also persisted to
+    ``websites_info/{timestamp}_{topic}/`` for offline review.
+
     Args:
         sources: List of source dictionaries with url field
         config: Configuration object with Tavily API key
+        research_topic: Optional topic for per-session file organization
 
     Returns:
         List of sources with added raw_content field
@@ -200,6 +256,13 @@ def _fetch_tavily_content(sources: list[dict], config: Configuration) -> list[di
     if not api_key:
         logger.warning("TAVILY_API_KEY not set, skipping full content fetch")
         return sources
+
+    # Build per-session directory if topic is available
+    session_dir: Path | None = None
+    if research_topic:
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_topic = sanitize_topic(research_topic)
+        session_dir = WEBSITES_INFO_DIR / f"{timestamp}_{safe_topic}"
 
     headers = {"Authorization": f"Bearer {api_key}"}
 
@@ -214,6 +277,8 @@ def _fetch_tavily_content(sources: list[dict], config: Configuration) -> list[di
             result = response.json()
             if result.get("results"):
                 source["raw_content"] = result["results"][0].get("content", "")
+                if session_dir:
+                    _save_raw_content(source, session_dir)
         except Exception as e:
             logger.warning("Tavily extract failed for %s: %s", source.get('url', 'unknown'), e)
 
