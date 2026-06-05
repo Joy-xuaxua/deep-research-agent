@@ -22,7 +22,7 @@ from utils import (
 
 logger = logging.getLogger(__name__)
 
-MAX_TOKENS_PER_SOURCE = 2000
+MAX_TOKENS_PER_SOURCE = 10000
 CHARS_PER_TOKEN = 4
 KEIRO_API_URL = "https://kierolabs.space/api/v2/keiro"
 KEIRO_DEFAULT_MAX_RESULTS = 5
