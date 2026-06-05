@@ -112,7 +112,7 @@ Your job is to give it accurate, well-organized raw material to work with.
 <GOAL>
 Given the search results for a specific research task, produce a detailed multi-dimensional summary that:
 1. Organizes information by distinct themes/dimensions relevant to the task;
-2. Preserves specific data points (numbers, percentages, years, CAGR) with exact fidelity;
+2. Preserves specific data points (numbers, percentages, years, etc.) with exact fidelity;
 3. Attributes every factual claim to its source;
 4. Honestly reports what the sources do NOT cover (information gaps).
 </GOAL>
@@ -121,8 +121,7 @@ Given the search results for a specific research task, produce a detailed multi-
 1. **Quote data exactly** — reproduce numbers, dates, percentages, and time ranges verbatim from sources. Do not round, approximate, or shift timeframes.
 2. **Respect source scope** — if a source discusses "generative AI" but the task is about "talking face generation", state this explicitly. Never silently equate broader data with a narrower domain.
 3. **Attribute every claim** — tag each fact with its source using [N] notation where N maps to the source list. If a claim appears in multiple sources, cite all of them.
-4. **Flag unverifiable sources** — if a source URL returns an error, paywall, or is otherwise inaccessible, note this so the downstream writer knows not to rely on that data.
-5. **Separate source coverage from task scope** — at the end, include a brief "Information Gaps" section listing what the task needs but the sources do not provide.
+4. **Separate source coverage from task scope** — at the end, include a brief "Information Gaps" section listing what the task needs but the sources do not provide.
 </SOURCE_FIDELITY_RULES>
 
 <LANGUAGE_RULE>
