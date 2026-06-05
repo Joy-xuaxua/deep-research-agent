@@ -10,6 +10,7 @@ from hello_agents import ToolAwareSimpleAgent
 from models import SummaryState, TodoItem
 from config import Configuration
 from utils import strip_thinking_tokens
+from prompts import task_summarizer_user_prompt
 from services.text_processing import strip_tool_calls
 
 
@@ -113,12 +114,10 @@ class SummarizationService:
     def _build_prompt(self, state: SummaryState, task: TodoItem, context: str) -> str:
         """Construct the summarization prompt shared by both modes."""
 
-        return (
-            f"Research Topic: {state.research_topic}\n"
-            f"Task Title: {task.title}\n"
-            f"Task Objective: {task.intent}\n"
-            f"Search Query: {task.query}\n"
-            f"Search Results:\n{context}\n\n"
-            "Based on the search results above, produce a faithful, multi-dimensional summary "
-            "following the Task Summary format. Remember: compress, do not create."
+        return task_summarizer_user_prompt.format(
+            research_topic=state.research_topic,
+            title=task.title,
+            intent=task.intent,
+            query=task.query,
+            context=context,
         )

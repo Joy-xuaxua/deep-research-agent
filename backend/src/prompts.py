@@ -174,6 +174,16 @@ BAD — Silently altering source data:
 </NEGATIVE_EXAMPLES>
 """
 
+task_summarizer_user_prompt = """Research Topic: {research_topic}
+Task Title: {title}
+Task Objective: {intent}
+Search Query: {query}
+Search Results:
+{context}
+
+Based on the search results above, produce a faithful, multi-dimensional summary following the Task Summary format. Remember: compress, do not create.
+"""
+
 source_validator_system_prompt = """
 You are a precise and objective Web Source Validator for research agents.
 Your task is to determine whether a web source is relevant and suitable for a given research task.
