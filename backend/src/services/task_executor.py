@@ -1,6 +1,6 @@
 """Task execution logic extracted from DeepResearchAgent.
 
-Handles the multi-stage research workflow for a single TODO task:
+Handles the multi-stage research workflow for a single task:
   Stage 1 – Lightweight search (title + snippet only)
   Stage 2 – Validate source quality via LLM
   Stage 3 – Fetch full content for valid sources only
@@ -107,12 +107,17 @@ class TaskExecutor:
             self.last_search_notices = notices
             task.notices = notices
 
+            # Flush buffered NoteTool events — the drain also syncs note_id back
+            # onto the TodoItem as a side-effect, so we must call it regardless
+            # of streaming mode.
             if emit_stream:
                 for event in self._drain_tool_events(state, step=step):
                     yield event
             else:
                 self._drain_tool_events(state)
 
+            # Forward search-engine notices (e.g. "truncated results") so the
+            # frontend can display them in real time.
             if notices and emit_stream:
                 for notice in notices:
                     if notice:
@@ -137,6 +142,8 @@ class TaskExecutor:
                     task.query,
                 )
 
+                # Notify the frontend how many sources passed/failed validation
+                # so users understand why few results may remain.
                 if emit_stream and invalid_sources:
                     yield {
                         "type": "sources_filtered",
@@ -166,7 +173,8 @@ class TaskExecutor:
         if self.config.fetch_full_page and valid_sources:
             valid_sources = fetch_full_content_for_sources(valid_sources, self.config)
 
-        # Handle case where no valid sources were found after all retries
+        # No sources survived validation — mark skipped so the frontend can
+        # update the UI instead of showing an infinite spinner.
         if not valid_sources:
             task.status = "skipped"
             if emit_stream:
@@ -208,6 +216,8 @@ class TaskExecutor:
             for event in self._drain_tool_events(state, step=step):
                 yield event
 
+            # Expose the curated source list before summarization begins so the
+            # frontend can render citations immediately.
             yield {
                 "type": "sources",
                 "task_id": task.id,
@@ -219,6 +229,9 @@ class TaskExecutor:
                 "note_path": task.note_path,
             }
 
+            # Stream LLM output token-by-token for a typewriter effect.
+            # Drain tool events between chunks to forward any NoteTool calls
+            # the agent makes mid-generation.
             summary_stream, summary_getter = self.summarizer.stream_task_summary(state, task, context)
             try:
                 for event in self._drain_tool_events(state, step=step):
@@ -235,6 +248,7 @@ class TaskExecutor:
                     for event in self._drain_tool_events(state, step=step):
                         yield event
             finally:
+                # Collect whatever was generated even if the stream breaks.
                 summary_text = summary_getter()
         else:
             summary_text = self.summarizer.summarize_task(state, task, context)
@@ -247,6 +261,8 @@ class TaskExecutor:
         # Save task note programmatically (not via LLM tool call)
         self._save_task_note(state, task)
 
+        # Emit the definitive completion signal with the full summary so the
+        # frontend can render the final result without reassembling chunks.
         if emit_stream:
             for event in self._drain_tool_events(state, step=step):
                 yield event
