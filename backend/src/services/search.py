@@ -121,14 +121,14 @@ def dispatch_search(
             )
 
             return payload, notices, answer_text, backend_label
-
+        logger.info("dispatch_search: query in vague search: %s", query)
         raw_response = _GLOBAL_SEARCH_TOOL.run(
             {
                 "input": query,
                 "backend": search_api,
                 "mode": "structured",
                 "fetch_full_page": should_fetch_full,
-                "max_results": 5,
+                "max_results": 10,
                 "max_tokens_per_source": max_tokens_per_source,
                 "loop_count": loop_count,
             }
@@ -194,7 +194,7 @@ def prepare_research_context(
     )
 
     if answer_text:
-        context = f"AI直接答案：\n{answer_text}\n\n{context}"
+        context = f"LLM directly gives answer :\n{answer_text}\n\n{context}"
 
     return sources_url, context
 

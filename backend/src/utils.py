@@ -51,9 +51,9 @@ def deduplicate_and_format_sources(
     for source in unique_sources.values():
         title = source.get("title") or source.get("url", "")
         content = source.get("content", "")
-        formatted_parts.append(f"信息来源: {title}\n\n")
+        formatted_parts.append(f"Title: {title}\n\n")
         formatted_parts.append(f"URL: {source.get('url', '')}\n\n")
-        formatted_parts.append(f"信息内容: {content}\n\n")
+        formatted_parts.append(f"Content: {content}\n\n")
 
         if fetch_full_page:
             raw_content = source.get("raw_content")
@@ -62,7 +62,7 @@ def deduplicate_and_format_sources(
                 raw_content = ""
             raw_content = truncate_to_tokens(raw_content, max_tokens_per_source)
             formatted_parts.append(
-                f"详细信息内容限制为 {max_tokens_per_source} 个 token: {raw_content}\n\n"
+                f"Content: {raw_content}\n\n"
             )
 
     return "".join(formatted_parts).strip()

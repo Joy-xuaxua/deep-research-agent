@@ -213,6 +213,25 @@ INVALID - Low-quality blogspam domain, not credible
 </OUTPUT_FORMAT>
 """
 
+source_validation_user_prompt = """Please determine if the following information source is relevant to the task:
+
+<Task Intent>
+{task_intent}
+
+<Search Query>
+{task_query}
+
+<Information Source>
+Title: {title}
+URL: {url}
+Summary: {content}
+
+Please determine if this information source matches the task intent. Output format:
+VALID - [reason]
+or
+INVALID - [reason]
+"""
+
 report_writer_instructions = """
 You are a professional report writer. Based on the task summaries and reference information provided, create a structured research report.
 

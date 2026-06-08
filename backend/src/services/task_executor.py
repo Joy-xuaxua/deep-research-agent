@@ -105,6 +105,7 @@ class TaskExecutor:
                 fetch_full_page=False,
                 max_tokens_per_source=self.config.max_tokens_per_source,
             )
+            logger.info("dispatch search search_result: %s",search_result)
             self.last_search_notices = notices
             task.notices = notices
 

@@ -13,7 +13,7 @@ from typing import Any, List, Tuple
 from hello_agents import ToolAwareSimpleAgent
 
 from config import Configuration
-from prompts import source_validator_system_prompt
+from prompts import source_validator_system_prompt, source_validation_user_prompt
 from models import ResearchTask
 
 logger = logging.getLogger(__name__)
@@ -99,24 +99,13 @@ class SourceValidator:
         content = source.get("content", source.get("snippet", ""))
         url = source.get("url", "")
 
-        return f"""请判断以下信息源是否与任务相关：
-
-<任务意图>
-{task_intent}
-
-<搜索查询>
-{task_query}
-
-<信息源>
-标题: {title}
-URL: {url}
-摘要: {content}
-
-请判断该信息源是否符合任务意图，输出格式：
-VALID - [原因]
-或
-INVALID - [原因]
-"""
+        return source_validation_user_prompt.format(
+            task_intent=task_intent,
+            task_query=task_query,
+            title=title,
+            url=url,
+            content=content
+        )
 
     def _parse_validation_response(self, response: str) -> bool:
         """Parse LLM's validation judgment from response text.

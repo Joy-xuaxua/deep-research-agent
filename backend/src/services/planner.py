@@ -31,6 +31,8 @@ class PlanningService:
     def plan_todo_list(self, state: ResearchState) -> List[ResearchTask]:
         """Ask the planner agent to break the topic into actionable tasks."""
 
+        logger.info("planner input: research_topic: %s",state.research_topic)
+        
         prompt = todo_planner_instructions.format(
             current_date=get_current_date(),
             research_topic=state.research_topic,
@@ -62,8 +64,7 @@ class PlanningService:
 
         state.todo_items = todo_items
 
-        titles = [task.title for task in todo_items]
-        logger.info("Planner produced %d tasks: %s", len(todo_items), titles)
+        logger.info("Planner produced %d tasks: %s", len(todo_items), state.todo_items)
         return todo_items
 
     @staticmethod
