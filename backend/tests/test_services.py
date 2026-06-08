@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 
 from config import Configuration, SearchAPI
-from models import SummaryState, TodoItem
+from models import ResearchState, ResearchTask
 from services.planner import PlanningService, TOOL_CALL_PATTERN
 from services.reporter import ReportingService
 from services.summarizer import SummarizationService
@@ -34,8 +34,8 @@ def test_config():
 
 @pytest.fixture
 def test_state():
-    """Create a test SummaryState."""
-    return SummaryState(
+    """Create a test ResearchState."""
+    return ResearchState(
         research_topic="2025年talking face generation在商业中的最新应用和效果"
     )
 
@@ -153,7 +153,7 @@ class TestPlanningService:
 
     def test_create_fallback_task_empty_topic(self):
         """Test creating a fallback task with empty topic."""
-        state = SummaryState(research_topic="")
+        state = ResearchState(research_topic="")
         service = PlanningService(Mock(), Configuration())
         task = service.create_fallback_task(state)
 
@@ -249,8 +249,8 @@ class TestSummarizationService:
         factory = lambda: mock_agent
         service = SummarizationService(factory, test_config)
 
-        state = SummaryState(research_topic="Talking Face Generation")
-        task = TodoItem(
+        state = ResearchState(research_topic="Talking Face Generation")
+        task = ResearchTask(
             id=1,
             title="技术分析",
             intent="分析技术原理",
@@ -272,8 +272,8 @@ class TestSummarizationService:
         factory = lambda: mock_agent
         service = SummarizationService(factory, test_config)
 
-        state = SummaryState(research_topic="Test Topic")
-        task = TodoItem(id=1, title="Test", intent="Test", query="test")
+        state = ResearchState(research_topic="Test Topic")
+        task = ResearchTask(id=1, title="Test", intent="Test", query="test")
         context = "Context"
 
         mock_agent.run.return_value = "<thinking>Process</thinking>Actual summary"
@@ -288,8 +288,8 @@ class TestSummarizationService:
         factory = lambda: mock_agent
         service = SummarizationService(factory, test_config)
 
-        state = SummaryState(research_topic="Test Topic")
-        task = TodoItem(id=1, title="Test", intent="Test", query="test")
+        state = ResearchState(research_topic="Test Topic")
+        task = ResearchTask(id=1, title="Test", intent="Test", query="test")
         context = "Context"
 
         mock_agent.run.return_value = "   "
@@ -303,8 +303,8 @@ class TestSummarizationService:
         factory = lambda: mock_agent
         service = SummarizationService(factory, test_config)
 
-        state = SummaryState(research_topic="Talking Face Generation")
-        task = TodoItem(
+        state = ResearchState(research_topic="Talking Face Generation")
+        task = ResearchTask(
             id=1,
             title="技术分析",
             intent="分析技术原理",
@@ -328,8 +328,8 @@ class TestSummarizationService:
         factory = lambda: mock_agent
         service = SummarizationService(factory, test_config)
 
-        state = SummaryState(research_topic="Talking Face Generation")
-        task = TodoItem(
+        state = ResearchState(research_topic="Talking Face Generation")
+        task = ResearchTask(
             id=1,
             title="技术分析",
             intent="分析技术原理",
@@ -359,11 +359,11 @@ class TestReportingService:
         """Test generating a final report."""
         service = ReportingService(mock_agent, test_config)
 
-        state = SummaryState(
+        state = ResearchState(
             research_topic="2025年talking face generation在商业中的最新应用和效果"
         )
         state.todo_items = [
-            TodoItem(
+            ResearchTask(
                 id=1,
                 title="技术背景",
                 intent="技术原理",
@@ -372,7 +372,7 @@ class TestReportingService:
                 summary="技术总结内容",
                 sources_summary="技术来源"
             ),
-            TodoItem(
+            ResearchTask(
                 id=2,
                 title="商业应用",
                 intent="应用场景",
@@ -397,9 +397,9 @@ class TestReportingService:
         test_config.strip_thinking_tokens = True
         service = ReportingService(mock_agent, test_config)
 
-        state = SummaryState(research_topic="Test Topic")
+        state = ResearchState(research_topic="Test Topic")
         state.todo_items = [
-            TodoItem(
+            ResearchTask(
                 id=1,
                 title="Task 1",
                 intent="Intent 1",
@@ -421,9 +421,9 @@ class TestReportingService:
         """Test report generation with empty response."""
         service = ReportingService(mock_agent, test_config)
 
-        state = SummaryState(research_topic="Test Topic")
+        state = ResearchState(research_topic="Test Topic")
         state.todo_items = [
-            TodoItem(
+            ResearchTask(
                 id=1,
                 title="Task 1",
                 intent="Intent 1",
@@ -444,9 +444,9 @@ class TestReportingService:
         """Test that report generation includes note references when available."""
         service = ReportingService(mock_agent, test_config)
 
-        state = SummaryState(research_topic="Test Topic")
+        state = ResearchState(research_topic="Test Topic")
         state.todo_items = [
-            TodoItem(
+            ResearchTask(
                 id=1,
                 title="Task 1",
                 intent="Intent 1",
@@ -456,7 +456,7 @@ class TestReportingService:
                 sources_summary="Sources 1",
                 note_id="note_001"
             ),
-            TodoItem(
+            ResearchTask(
                 id=2,
                 title="Task 2",
                 intent="Intent 2",
@@ -480,11 +480,11 @@ class TestReportingService:
         """Test generating report for talking face generation research."""
         service = ReportingService(mock_agent, test_config)
 
-        state = SummaryState(
+        state = ResearchState(
             research_topic="2025年talking face generation在商业中的最新应用和效果"
         )
         state.todo_items = [
-            TodoItem(
+            ResearchTask(
                 id=1,
                 title="技术原理",
                 intent="了解talking face generation的技术基础",
@@ -493,14 +493,14 @@ class TestReportingService:
                 summary="Talking face generation主要基于音频驱动的面部动画技术...",
                 sources_summary="- 技术论文1\n- 技术博客2"
             ),
-            TodoItem(
+            ResearchTask(
                 id=2,
                 title="商业应用",
                 intent="分析商业应用场景",
                 query="talking face generation business",
                 status="completed",
                 summary="主要应用场景包括：1. 虚拟主播 2. 客服机器人 3. 教育培训...",
-                sources_summary "- 商业案例1\n- 行业报告2"
+                sources_summary="- 商业案例1\n- 行业报告2"
             )
         ]
 

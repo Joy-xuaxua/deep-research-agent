@@ -9,7 +9,7 @@ from typing import Any, List, Optional
 
 from hello_agents import ToolAwareSimpleAgent
 
-from models import SummaryState, TodoItem
+from models import ResearchState, ResearchTask
 from config import Configuration
 from prompts import get_current_date, todo_planner_instructions
 from utils import strip_thinking_tokens
@@ -28,7 +28,7 @@ class PlanningService:
         self._agent = planner_agent
         self._config = config
 
-    def plan_todo_list(self, state: SummaryState) -> List[TodoItem]:
+    def plan_todo_list(self, state: ResearchState) -> List[ResearchTask]:
         """Ask the planner agent to break the topic into actionable tasks."""
 
         prompt = todo_planner_instructions.format(
@@ -42,7 +42,7 @@ class PlanningService:
         logger.info("Planner raw output (truncated): %s", response[:500])
 
         tasks_payload = self._extract_tasks(response)
-        todo_items: List[TodoItem] = []
+        todo_items: List[ResearchTask] = []
 
         for idx, item in enumerate(tasks_payload, start=1):
             title = str(item.get("title") or f"任务{idx}").strip()
@@ -52,7 +52,7 @@ class PlanningService:
             if not query:
                 query = state.research_topic
 
-            task = TodoItem(
+            task = ResearchTask(
                 id=idx,
                 title=title,
                 intent=intent,
@@ -67,10 +67,10 @@ class PlanningService:
         return todo_items
 
     @staticmethod
-    def create_fallback_task(state: SummaryState) -> TodoItem:
+    def create_fallback_task(state: ResearchState) -> ResearchTask:
         """Create a minimal fallback task when planning failed."""
 
-        return TodoItem(
+        return ResearchTask(
             id=1,
             title="基础背景梳理",
             intent="收集主题的核心背景与最新动态",

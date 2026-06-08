@@ -9,7 +9,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Callable, Optional
 
-from models import SummaryState, TodoItem
+from models import ResearchState, ResearchTask
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +91,7 @@ class ToolCallTracker:
     # ------------------------------------------------------------------
     # Draining helpers
     # ------------------------------------------------------------------
-    def drain(self, state: SummaryState, *, step: Optional[int] = None) -> list[dict[str, Any]]:
+    def drain(self, state: ResearchState, *, step: Optional[int] = None) -> list[dict[str, Any]]:
         """提取尚未消费的工具调用事件，并同步任务的 note_id。
 
         这是一个消费者模式的生产者-消费者实现：
@@ -142,13 +142,13 @@ class ToolCallTracker:
         # ====================================================================
 
         # ====================================================================
-        # Step 5: 同步 note_id 到对应的 TodoItem
+        # Step 5: 同步 note_id 到对应的 ResearchTask
         # 目的: 当 agent 创建笔记时，将 note_id 关联到对应的 task
         #
         # 这个关联很重要，因为:
-        # - TodoItem 创建时没有 note_id
+        # - ResearchTask 创建时没有 note_id
         # - NoteTool 被调用时会创建笔记并返回 note_id
-        # - 需要将这个 note_id 写回到 TodoItem，供后续使用（如归档）
+        # - 需要将这个 note_id 写回到 ResearchTask，供后续使用（如归档）
         # ====================================================================
         if state.todo_items:
             for event in new_events:
@@ -159,7 +159,7 @@ class ToolCallTracker:
                 if task_id is None or not note_id:
                     continue
 
-                # 将 note_id 附加到对应的 TodoItem
+                # 将 note_id 附加到对应的 ResearchTask
                 self._attach_note_to_task(state.todo_items, task_id, note_id)
 
         # ====================================================================
@@ -229,7 +229,7 @@ class ToolCallTracker:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-    def _attach_note_to_task(self, tasks: list[TodoItem], task_id: int, note_id: str) -> None:
+    def _attach_note_to_task(self, tasks: list[ResearchTask], task_id: int, note_id: str) -> None:
         """Update matching TODO item with note metadata."""
 
         for task in tasks:

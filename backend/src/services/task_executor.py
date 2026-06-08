@@ -18,7 +18,7 @@ from typing import Any, Iterator
 from hello_agents.tools.builtin.note_tool import NoteTool
 
 from config import Configuration
-from models import SummaryState, TodoItem
+from models import ResearchState, ResearchTask
 from services.search import (
     dispatch_search,
     fetch_full_content_for_sources,
@@ -59,8 +59,8 @@ class TaskExecutor:
     # ------------------------------------------------------------------
     def execute_task(
         self,
-        state: SummaryState,
-        task: TodoItem,
+        state: ResearchState,
+        task: ResearchTask,
         *,
         emit_stream: bool,
         step: int | None = None,
@@ -109,7 +109,7 @@ class TaskExecutor:
             task.notices = notices
 
             # Flush buffered NoteTool events — the drain also syncs note_id back
-            # onto the TodoItem as a side-effect, so we must call it regardless
+            # onto the ResearchTask as a side-effect, so we must call it regardless
             # of streaming mode.
             if emit_stream:
                 for event in self._drain_tool_events(state, step=step):
@@ -207,11 +207,9 @@ class TaskExecutor:
             max_tokens_per_source=self.config.max_tokens_per_source,
         )
 
-        task.sources_url_collection = sources_url
+        task.sources_summary = sources_url
 
         with self.state_lock:
-            state.web_research_results.append(context)
-            state.sources_gathered.append(sources_url)
             state.research_loop_count += 1
 
         summary_text: str | None = None
@@ -276,7 +274,7 @@ class TaskExecutor:
                 "task_id": task.id,
                 "status": "completed",
                 "summary": task.summary,
-                "sources_summary": task.sources_url_collection,
+                "sources_summary": task.sources_summary,
                 "note_id": task.note_id,
                 "note_path": task.note_path,
                 "step": step,
@@ -289,7 +287,7 @@ class TaskExecutor:
     # ------------------------------------------------------------------
     def _drain_tool_events(
         self,
-        state: SummaryState,
+        state: ResearchState,
         *,
         step: int | None = None,
     ) -> list[dict[str, Any]]:
@@ -299,7 +297,7 @@ class TaskExecutor:
             return []
         return events
 
-    def _save_task_note(self, state: SummaryState, task: TodoItem) -> None:
+    def _save_task_note(self, state: ResearchState, task: ResearchTask) -> None:
         """Save task summary to a note programmatically after summarization."""
         if not self.note_tool or not task.summary:
             return
@@ -308,8 +306,8 @@ class TaskExecutor:
         tags = ["deep_research", f"task_{task.id}"]
 
         parts = [f"检索查询：{task.query}"]
-        if task.sources_url_collection:
-            parts.append(f"\n## 来源概览\n{task.sources_url_collection}")
+        if task.sources_summary:
+            parts.append(f"\n## 来源概览\n{task.sources_summary}")
         parts.append(f"\n## 研究总结\n{task.summary}")
         content = "\n".join(parts)
 

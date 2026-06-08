@@ -14,7 +14,7 @@ from hello_agents import ToolAwareSimpleAgent
 
 from config import Configuration
 from prompts import source_validator_system_prompt
-from models import TodoItem
+from models import ResearchTask
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,7 @@ class SourceValidator:
 
         for source in sources:
             prompt = self._build_validation_prompt(source, task_intent, task_query)
+
             response = self._agent.run(prompt)
             self._agent.clear_history()  # Clear context after each validation
 

@@ -157,7 +157,7 @@ def create_app() -> FastAPI:
                 "query": item.query,
                 "status": item.status,
                 "summary": item.summary,
-                "sources_summary": item.sources_url_collection,
+                "sources_summary": item.sources_summary,
                 "note_id": item.note_id,
                 "note_path": item.note_path,
             }
@@ -165,7 +165,7 @@ def create_app() -> FastAPI:
         ]
 
         return ResearchResponse(
-            report_markdown=(result.report_markdown or result.running_summary or ""),
+            report_markdown=(result.report_markdown or ""),
             todo_items=todo_payload,
         )
 

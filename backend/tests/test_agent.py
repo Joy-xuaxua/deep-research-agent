@@ -6,7 +6,7 @@ import pytest
 
 from agent import DeepResearchAgent
 from config import Configuration, SearchAPI
-from models import SummaryState, TodoItem
+from models import ResearchState, ResearchTask
 
 
 @pytest.fixture
@@ -155,7 +155,7 @@ class TestDeepResearchAgentRun:
         # Mock planner to return empty list
         agent.planner.plan_todo_list = MagicMock(return_value=[])
         agent.planner.create_fallback_task = MagicMock(
-            return_value=TodoItem(
+            return_value=ResearchTask(
                 id=1,
                 title="Fallback",
                 intent="Fallback intent",
@@ -184,7 +184,7 @@ class TestDeepResearchAgentRun:
         agent = DeepResearchAgent(config=config)
 
         # Mock planner
-        task = TodoItem(
+        task = ResearchTask(
             id=1,
             title="技术分析",
             intent="分析技术",
@@ -203,7 +203,6 @@ class TestDeepResearchAgentRun:
         result = agent.run(talking_face_topic)
 
         assert result.report_markdown == expected_report
-        assert result.running_summary == expected_report
         assert len(result.todo_items) == 1
 
     @patch('agent.HelloAgentsLLM')
@@ -218,7 +217,7 @@ class TestDeepResearchAgentRun:
 
         agent = DeepResearchAgent(config=config)
 
-        task = TodoItem(
+        task = ResearchTask(
             id=1,
             title="任务1",
             intent="意图1",
@@ -254,7 +253,7 @@ class TestDeepResearchAgentRun:
 
         agent = DeepResearchAgent(config=config)
 
-        task = TodoItem(
+        task = ResearchTask(
             id=1,
             title="任务1",
             intent="意图1",
@@ -287,8 +286,8 @@ class TestDeepResearchAgentRunStream:
         # Mock planner
         agent.planner.plan_todo_list = MagicMock(
             return_value=[
-                TodoItem(id=1, title="任务1", intent="意图1", query="query1"),
-                TodoItem(id=2, title="任务2", intent="意图2", query="query2")
+                ResearchTask(id=1, title="任务1", intent="意图1", query="query1"),
+                ResearchTask(id=2, title="任务2", intent="意图2", query="query2")
             ]
         )
         agent._drain_tool_events = MagicMock(return_value=[])
@@ -326,8 +325,8 @@ class TestDeepResearchAgentRunStream:
         agent = DeepResearchAgent(config=config)
 
         tasks = [
-            TodoItem(id=1, title="技术背景", intent="技术分析", query="tech query"),
-            TodoItem(id=2, title="商业应用", intent="应用分析", query="business query")
+            ResearchTask(id=1, title="技术背景", intent="技术分析", query="tech query"),
+            ResearchTask(id=2, title="商业应用", intent="应用分析", query="business query")
         ]
         agent.planner.plan_todo_list = MagicMock(return_value=tasks)
         agent._drain_tool_events = MagicMock(return_value=[])
@@ -353,7 +352,7 @@ class TestDeepResearchAgentHelpers:
         mock_llm_class.return_value = MagicMock()
         agent = DeepResearchAgent(config=test_config)
 
-        task = TodoItem(
+        task = ResearchTask(
             id=1,
             title="测试任务",
             intent="测试意图",
@@ -407,7 +406,7 @@ class TestDeepResearchAgentHelpers:
         mock_llm_class.return_value = MagicMock()
         agent = DeepResearchAgent(config=test_config)
 
-        state = SummaryState(research_topic="Test")
+        state = ResearchState(research_topic="Test")
 
         # Mock tracker to return some events
         agent._tool_tracker.drain = MagicMock(return_value=[
@@ -443,19 +442,19 @@ class TestDeepResearchAgentIntegration:
         # Mock planner to return talking face research tasks
         agent.planner.plan_todo_list = MagicMock(
             return_value=[
-                TodoItem(
+                ResearchTask(
                     id=1,
                     title="技术背景",
                     intent="了解talking face generation的技术原理和发展历程",
                     query="talking face generation technology principles 2025"
                 ),
-                TodoItem(
+                ResearchTask(
                     id=2,
                     title="商业应用场景",
                     intent="分析talking face generation在商业领域的应用案例",
                     query="talking face generation business applications 2025"
                 ),
-                TodoItem(
+                ResearchTask(
                     id=3,
                     title="效果评估",
                     intent="评估talking face generation的应用效果和用户体验",

@@ -67,14 +67,13 @@ class TestResearchEndpoint:
 
     def test_research_endpoint_success(self, client, mock_agent, talking_face_topic):
         """Test successful research execution."""
-        from models import TodoItem, SummaryStateOutput
+        from models import ResearchTask, ResearchResult
 
         # Mock the agent's run method
-        mock_agent.run.return_value = SummaryStateOutput(
-            running_summary=f"# {talking_face_topic}\n\n研究报告内容",
+        mock_agent.run.return_value = ResearchResult(
             report_markdown=f"# {talking_face_topic}\n\n完整报告",
             todo_items=[
-                TodoItem(
+                ResearchTask(
                     id=1,
                     title="技术背景",
                     intent="技术分析",
@@ -83,7 +82,7 @@ class TestResearchEndpoint:
                     summary="技术总结",
                     sources_summary="技术来源"
                 ),
-                TodoItem(
+                ResearchTask(
                     id=2,
                     title="商业应用",
                     intent="应用分析",
@@ -111,13 +110,12 @@ class TestResearchEndpoint:
 
     def test_research_endpoint_with_search_api_override(self, client, mock_agent, talking_face_topic):
         """Test research endpoint with search API override."""
-        from models import TodoItem, SummaryStateOutput
+        from models import ResearchTask, ResearchResult
 
-        mock_agent.run.return_value = SummaryStateOutput(
-            running_summary="Summary",
+        mock_agent.run.return_value = ResearchResult(
             report_markdown="Report",
             todo_items=[
-                TodoItem(
+                ResearchTask(
                     id=1,
                     title="Task 1",
                     intent="Intent 1",
@@ -170,10 +168,9 @@ class TestResearchEndpoint:
 
     def test_research_endpoint_empty_todo_list(self, client, mock_agent):
         """Test research endpoint with empty todo list."""
-        from models import SummaryStateOutput
+        from models import ResearchResult
 
-        mock_agent.run.return_value = SummaryStateOutput(
-            running_summary="No results",
+        mock_agent.run.return_value = ResearchResult(
             report_markdown="No results",
             todo_items=[]
         )
@@ -189,31 +186,30 @@ class TestResearchEndpoint:
 
     def test_research_talking_face_topic(self, client, mock_agent, talking_face_topic):
         """Test research endpoint with talking face generation topic."""
-        from models import TodoItem, SummaryStateOutput
+        from models import ResearchTask, ResearchResult
 
-        mock_agent.run.return_value = SummaryStateOutput(
-            running_summary=f"# {talking_face_topic}\n\n# 技术背景\nTalking face generation技术...\n\n# 商业应用\n主要应用场景...",
+        mock_agent.run.return_value = ResearchResult(
             report_markdown=f"# {talking_face_topic}\n\n完整报告内容",
             todo_items=[
-                TodoItem(
+                ResearchTask(
                     id=1,
                     title="技术背景梳理",
                     intent="了解talking face generation的技术原理",
                     query="2025年talking face generation 技术原理",
                     status="completed",
                     summary="Talking face generation主要基于深度学习技术...",
-                    sources_summary "- 技术论文1\n- 技术博客2"
+                    sources_summary="- 技术论文1\n- 技术博客2"
                 ),
-                TodoItem(
+                ResearchTask(
                     id=2,
                     title="商业应用分析",
                     intent="分析talking face generation的商业应用场景",
                     query="2025年talking face generation 商业应用",
                     status="completed",
                     summary="2025年talking face generation在以下商业领域得到应用...",
-                    sources_summary "- 行业报告1\n- 商业案例2"
+                    sources_summary="- 行业报告1\n- 商业案例2"
                 ),
-                TodoItem(
+                ResearchTask(
                     id=3,
                     title="应用效果评估",
                     intent="评估talking face generation的应用效果",

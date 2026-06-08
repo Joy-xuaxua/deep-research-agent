@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from hello_agents import ToolAwareSimpleAgent
 
-from models import SummaryState
+logger = logging.getLogger(__name__)
+
+from models import ResearchState
 from config import Configuration
 from utils import strip_thinking_tokens
 from services.text_processing import strip_tool_calls
@@ -19,13 +22,13 @@ class ReportingService:
         self._agent = report_agent
         self._config = config
 
-    def generate_report(self, state: SummaryState) -> str:
+    def generate_report(self, state: ResearchState) -> str:
         """Generate a structured report based on completed tasks."""
 
         tasks_block = []
         for task in state.todo_items:
             summary_block = task.summary or "暂无可用信息"
-            sources_block = task.sources_url_collection or "暂无来源"
+            sources_block = task.sources_summary or "暂无来源"
             tasks_block.append(
                 f"### 任务 {task.id}: {task.title}\n"
                 f"- 任务目标：{task.intent}\n"

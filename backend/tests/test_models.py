@@ -2,15 +2,15 @@
 
 import pytest
 
-from models import SummaryState, SummaryStateOutput, TodoItem
+from models import ResearchResult, ResearchState, ResearchTask
 
 
-class TestTodoItem:
-    """Tests for TodoItem dataclass."""
+class TestResearchTask:
+    """Tests for ResearchTask dataclass."""
 
-    def test_create_todo_item_with_defaults(self):
-        """Test creating a TodoItem with default values."""
-        item = TodoItem(
+    def test_create_task_with_defaults(self):
+        """Test creating a ResearchTask with default values."""
+        item = ResearchTask(
             id=1,
             title="Test Task",
             intent="Test intent",
@@ -28,9 +28,9 @@ class TestTodoItem:
         assert item.note_path is None
         assert item.stream_token is None
 
-    def test_create_todo_item_with_all_fields(self):
-        """Test creating a TodoItem with all fields specified."""
-        item = TodoItem(
+    def test_create_task_with_all_fields(self):
+        """Test creating a ResearchTask with all fields specified."""
+        item = ResearchTask(
             id=2,
             title="Complete Task",
             intent="Complete intent",
@@ -52,9 +52,9 @@ class TestTodoItem:
         assert item.note_path == "/path/to/note.md"
         assert item.stream_token == "task_2"
 
-    def test_todo_item_for_talking_face_research(self):
-        """Test creating a TodoItem for talking face generation research."""
-        item = TodoItem(
+    def test_create_task_for_talking_face_research(self):
+        """Test creating a ResearchTask for talking face generation research."""
+        item = ResearchTask(
             id=1,
             title="技术背景梳理",
             intent="了解talking face generation的核心技术原理",
@@ -65,80 +65,59 @@ class TestTodoItem:
         assert item.status == "pending"
 
 
-class TestSummaryState:
-    """Tests for SummaryState dataclass."""
+class TestResearchState:
+    """Tests for ResearchState dataclass."""
 
-    def test_create_summary_state_with_defaults(self):
-        """Test creating a SummaryState with default values."""
-        state = SummaryState()
+    def test_create_state_with_defaults(self):
+        """Test creating a ResearchState with default values."""
+        state = ResearchState()
         assert state.research_topic is None
-        assert state.web_research_results == []
-        assert state.sources_gathered == []
         assert state.research_loop_count == 0
-        assert state.running_summary is None
         assert state.todo_items == []
-        assert state.structured_report is None
+        assert state.report is None
         assert state.report_note_id is None
         assert state.report_note_path is None
         assert state.archive_dir is None
-        assert state.archive_report_path is None
-        assert state.archive_task_paths == {}
 
-    def test_create_summary_state_with_topic(self):
-        """Test creating a SummaryState with a research topic."""
+    def test_create_state_with_topic(self):
+        """Test creating a ResearchState with a research topic."""
         topic = "2025年talking face generation在商业中的最新应用和效果"
-        state = SummaryState(research_topic=topic)
+        state = ResearchState(research_topic=topic)
         assert state.research_topic == topic
         assert state.research_loop_count == 0
 
-    def test_summary_state_add_operator(self):
-        """Test that list fields support addition via operator."""
-        state1 = SummaryState(
-            web_research_results=["result1"],
-            sources_gathered=["source1"],
-            todo_items=[TodoItem(id=1, title="Task 1", intent="Intent", query="Query")]
+    def test_state_with_tasks(self):
+        """Test adding tasks to state."""
+        state = ResearchState(
+            todo_items=[ResearchTask(id=1, title="Task 1", intent="Intent", query="Query")]
         )
-        state2 = SummaryState(
-            web_research_results=["result2"],
-            sources_gathered=["source2"],
-            todo_items=[TodoItem(id=2, title="Task 2", intent="Intent", query="Query")]
-        )
+        assert len(state.todo_items) == 1
+        assert state.todo_items[0].title == "Task 1"
 
-        # The operator.add annotation should allow this behavior
-        assert state1.web_research_results == ["result1"]
-        assert state1.sources_gathered == ["source1"]
-        assert len(state1.todo_items) == 1
-
-    def test_summary_state_archive_fields(self):
+    def test_state_archive_fields(self):
         """Test archive-related fields."""
-        state = SummaryState(
+        state = ResearchState(
             archive_dir="./archives/test_topic",
-            archive_report_path="./archives/test_topic/report.md",
-            archive_task_paths={1: "./archives/test_topic/task_1.md"}
         )
         assert state.archive_dir == "./archives/test_topic"
-        assert state.archive_report_path == "./archives/test_topic/report.md"
-        assert state.archive_task_paths[1] == "./archives/test_topic/task_1.md"
 
 
-class TestSummaryStateOutput:
-    """Tests for SummaryStateOutput dataclass."""
+class TestResearchResult:
+    """Tests for ResearchResult dataclass."""
 
-    def test_create_summary_state_output_with_defaults(self):
-        """Test creating a SummaryStateOutput with default values."""
-        output = SummaryStateOutput()
-        assert output.running_summary is None
+    def test_create_result_with_defaults(self):
+        """Test creating a ResearchResult with default values."""
+        output = ResearchResult()
         assert output.report_markdown is None
         assert output.todo_items == []
 
-    def test_create_summary_state_output_with_data(self):
-        """Test creating a SummaryStateOutput with data."""
+    def test_create_result_with_data(self):
+        """Test creating a ResearchResult with data."""
         topic = "2025年talking face generation在商业中的最新应用和效果"
-        output = SummaryStateOutput(
-            running_summary="Test summary",
+        output = ResearchResult(
             report_markdown="# Test Report\n\nContent here",
             todo_items=[
-                TodoItem(
+                ResearchTask(
                     id=1,
                     title="商业应用分析",
                     intent="分析talking face generation的商业应用场景",
@@ -146,31 +125,29 @@ class TestSummaryStateOutput:
                 )
             ]
         )
-        assert output.running_summary == "Test summary"
         assert output.report_markdown == "# Test Report\n\nContent here"
         assert len(output.todo_items) == 1
         assert output.todo_items[0].title == "商业应用分析"
 
-    def test_summary_state_output_with_talking_face_research(self):
-        """Test SummaryStateOutput for talking face generation research."""
+    def test_result_with_talking_face_research(self):
+        """Test ResearchResult for talking face generation research."""
         topic = "2025年talking face generation在商业中的最新应用和效果"
-        output = SummaryStateOutput(
-            running_summary=f"关于{topic}的研究报告",
+        output = ResearchResult(
             report_markdown=f"# {topic}\n\n## 研究内容\n\n详细分析...",
             todo_items=[
-                TodoItem(
+                ResearchTask(
                     id=1,
                     title="技术背景",
                     intent="了解技术原理",
                     query="talking face generation technology"
                 ),
-                TodoItem(
+                ResearchTask(
                     id=2,
                     title="商业应用",
                     intent="分析商业场景",
                     query="talking face generation business"
                 ),
-                TodoItem(
+                ResearchTask(
                     id=3,
                     title="效果评估",
                     intent="评估应用效果",
@@ -178,7 +155,6 @@ class TestSummaryStateOutput:
                 )
             ]
         )
-        assert "talking face" in output.running_summary
         assert len(output.todo_items) == 3
         assert output.todo_items[0].id == 1
         assert output.todo_items[1].id == 2
