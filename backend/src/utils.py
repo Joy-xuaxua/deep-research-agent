@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List
 
+from models import SourceInfo
 from token_utils import truncate_to_tokens
 
 logger = logging.getLogger(__name__)
@@ -17,52 +18,59 @@ def get_config_value(value: Any) -> str:
 
 
 def strip_thinking_tokens(text: str) -> str:
-    """Remove ``<think>`` sections from model responses."""
+    """Remove ``<think/>`` sections from model responses."""
 
-    while "<think>" in text and "</think>" in text:
-        start = text.find("<think>")
-        end = text.find("</think>") + len("</think>")
+    while "<think/>" in text and "</think/>" in text:
+        start = text.find("<think/>")
+        end = text.find("</think/>") + len("</think/>")
         text = text[:start] + text[end:]
     return text
 
 
+def _extract_sources_list(
+    search_response: Dict[str, Any] | List[SourceInfo],
+) -> list[SourceInfo]:
+    """Normalise a search payload or raw SourceInfo list into list[SourceInfo]."""
+    if isinstance(search_response, list):
+        return search_response
+    raw = search_response.get("results", [])
+    # Results may be SourceInfo objects (from task_executor) or plain dicts
+    # (from HelloAgents SearchTool / dispatch_search fallback paths).
+    return [s if isinstance(s, SourceInfo) else SourceInfo.from_dict(s) for s in raw]
+
+
 def deduplicate_and_format_sources(
-    search_response: Dict[str, Any] | List[Dict[str, Any]],
+    search_response: Dict[str, Any] | List[SourceInfo],
     max_tokens_per_source: int,
     *,
     fetch_full_page: bool = False,
 ) -> str:
     """Format and deduplicate search results for downstream prompting."""
 
-    if isinstance(search_response, dict):
-        sources_list = search_response.get("results", [])
-    else:
-        sources_list = search_response
+    sources_list = _extract_sources_list(search_response)
 
-    unique_sources: dict[str, Dict[str, Any]] = {}
+    unique_sources: dict[str, SourceInfo] = {}
     for source in sources_list:
-        url = source.get("url")
-        if not url:
+        if not source.url:
             continue
-        if url not in unique_sources:
-            unique_sources[url] = source
+        if source.url not in unique_sources:
+            unique_sources[source.url] = source
 
     formatted_parts: List[str] = []
     for source in unique_sources.values():
-        title = source.get("title") or source.get("url", "")
-        content = source.get("content", "")
+        title = source.title or source.url
         formatted_parts.append(f"Title: {title}\n\n")
-        formatted_parts.append(f"URL: {source.get('url', '')}\n\n")
-        formatted_parts.append(f"Content: {content}\n\n")
+        formatted_parts.append(f"URL: {source.url}\n\n")
+        formatted_parts.append(f"Abstract: {source.snippet}\n\n")
 
         if fetch_full_page:
-            raw_content = source.get("raw_content")
-            if raw_content is None:
-                logger.debug("raw_content missing for %s", source.get("url", ""))
-                raw_content = ""
-            raw_content = truncate_to_tokens(raw_content, max_tokens_per_source)
+            full = source.full_content
+            if full is None:
+                logger.debug("full_content missing for %s", source.url)
+                full = ""
+            full = truncate_to_tokens(full, max_tokens_per_source)
             formatted_parts.append(
-                f"Content: {raw_content}\n\n"
+                f"Content: {full}\n\n"
             )
 
     return "".join(formatted_parts).strip()
@@ -75,8 +83,15 @@ def format_sources(search_results: Dict[str, Any] | None) -> str:
         return ""
 
     results = search_results.get("results", [])
-    return "\n".join(
-        f"* {item.get('title', item.get('url', ''))} : {item.get('url', '')}"
-        for item in results
-        if item.get("url")
-    )
+    lines: list[str] = []
+    for item in results:
+        if isinstance(item, SourceInfo):
+            if not item.url:
+                continue
+            lines.append(f"* {item.title or item.url} : {item.url}")
+        else:
+            url = item.get("url", "")
+            if not url:
+                continue
+            lines.append(f"* {item.get('title', url)} : {url}")
+    return "\n".join(lines)

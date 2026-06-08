@@ -8,13 +8,12 @@ PlanningService - wrapping an agent with domain-specific interfaces.
 from __future__ import annotations
 
 import logging
-from typing import Any, List, Tuple
 
 from hello_agents import ToolAwareSimpleAgent
 
 from config import Configuration
-from prompts import source_validator_system_prompt, source_validation_user_prompt
-from models import ResearchTask
+from prompts import source_validation_user_prompt
+from models import SourceInfo
 
 logger = logging.getLogger(__name__)
 
@@ -40,25 +39,25 @@ class SourceValidator:
 
     def validate_sources(
         self,
-        sources: list[dict],
+        sources: list[SourceInfo],
         task_intent: str,
         task_query: str,
-    ) -> tuple[list[dict], list[dict]]:
+    ) -> tuple[list[SourceInfo], list[SourceInfo]]:
         """Validate information sources and return valid/invalid lists.
 
         Each source is evaluated individually based on title, URL, and snippet.
         The LLM determines whether the source is relevant to the task intent.
 
         Args:
-            sources: List of search result dictionaries with title, url, content fields
+            sources: List of SourceInfo objects
             task_intent: Description of what the task aims to accomplish
             task_query: The search query used to find these sources
 
         Returns:
             Tuple of (valid_sources, invalid_sources) lists
         """
-        valid: list[dict] = []
-        invalid: list[dict] = []
+        valid: list[SourceInfo] = []
+        invalid: list[SourceInfo] = []
 
         for source in sources:
             prompt = self._build_validation_prompt(source, task_intent, task_query)
@@ -71,7 +70,7 @@ class SourceValidator:
                 valid.append(source)
             else:
                 invalid.append(source)
-                logger.debug("Source filtered: %s - %s", source.get("url", "unknown"), response)
+                logger.debug("Source filtered: %s - %s", source.url or "unknown", response)
 
         logger.info(
             "Source validation: %d valid, %d filtered out of %d total",
@@ -81,30 +80,26 @@ class SourceValidator:
 
     def _build_validation_prompt(
         self,
-        source: dict,
+        source: SourceInfo,
         task_intent: str,
         task_query: str,
     ) -> str:
         """Build validation prompt for a single source.
 
         Args:
-            source: Source dictionary with title, url, content fields
+            source: SourceInfo object
             task_intent: Task intent description
             task_query: Search query used
 
         Returns:
             Formatted prompt string for LLM validation
         """
-        title = source.get("title", "")
-        content = source.get("content", source.get("snippet", ""))
-        url = source.get("url", "")
-
         return source_validation_user_prompt.format(
             task_intent=task_intent,
             task_query=task_query,
-            title=title,
-            url=url,
-            content=content
+            title=source.title,
+            url=source.url,
+            content=source.snippet,
         )
 
     def _parse_validation_response(self, response: str) -> bool:

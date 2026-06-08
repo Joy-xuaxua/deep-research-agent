@@ -18,7 +18,7 @@ from typing import Any, Iterator
 from hello_agents.tools.builtin.note_tool import NoteTool
 
 from config import Configuration
-from models import ResearchState, ResearchTask
+from models import ResearchState, ResearchTask, SourceInfo
 from services.search import (
     dispatch_search,
     fetch_full_content_for_sources,
@@ -87,7 +87,7 @@ class TaskExecutor:
         # Configure search retry parameters
         max_search_rounds = self.config.max_search_retries
         min_valid_sources = self.config.min_valid_sources_threshold
-        valid_sources: list[dict] = []
+        valid_sources: list[SourceInfo] = []
         search_round = 0
         search_result: dict[str, Any] | None = None
         answer_text: str | None = None
@@ -134,7 +134,10 @@ class TaskExecutor:
                 logger.info("Search round %d: No results for task %d", search_round, task.id)
                 continue
 
-            lightweight_sources = search_result.get("results", [])
+            lightweight_sources = [
+                SourceInfo.from_dict(r) if isinstance(r, dict) else r
+                for r in search_result.get("results", [])
+            ]
 
             # === Stage 2: Validate source quality (based on title + snippet) ===
             if self.validator:
@@ -200,7 +203,7 @@ class TaskExecutor:
             return
 
         # Prepare research context with valid sources (now with full content)
-        search_result = {"results": valid_sources, "backend": backend}
+        search_result = {"results": [s.to_dict() for s in valid_sources], "backend": backend}
         sources_url, context = prepare_research_context(
             search_result,
             answer_text,
@@ -297,7 +300,7 @@ class TaskExecutor:
         if self._tool_event_sink_enabled:
             return []
         return events
-
+                 
     def _save_task_note(self, state: ResearchState, task: ResearchTask) -> None:
         """Save task summary to a note programmatically after summarization."""
         if not self.note_tool or not task.summary:

@@ -1,7 +1,90 @@
 """State models used by the deep research workflow."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Any, List, Optional
+
+
+@dataclass(kw_only=True)
+class SourceInfo:
+    """A single search result source with metadata and optional full content.
+
+    Created from search API responses via ``from_dict()`` and converted back
+    to plain dicts via ``to_dict()`` for backward compatibility with dict-based
+    APIs (HelloAgents SearchTool, etc.).
+
+    Attributes:
+        title: Page title from the search result. Falls back to url if empty.
+        url: Canonical page URL. Used as the deduplication key across the
+            research pipeline.
+        snippet: Short summary text returned by the search API (1-3 sentences).
+            May originate from keys named ``content``, ``snippet``, ``body``,
+            ``text``, or ``description`` depending on the backend —
+            ``from_dict()`` handles this normalisation.
+        full_content: Full page text fetched after the lightweight search stage
+            (two-stage search optimisation). ``None`` until a fetch backend
+            populates it.
+    """
+
+    title: str
+    url: str
+    snippet: str = field(default="")
+    full_content: Optional[str] = field(default=None)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to the standard source dict shape for backward compatibility.
+
+        Maps internal field names to the legacy dict keys:
+        ``snippet`` → ``content``, ``full_content`` → ``raw_content``.
+        """
+        result: dict[str, Any] = {
+            "title": self.title,
+            "url": self.url,
+            "content": self.snippet,
+        }
+        if self.full_content is not None:
+            result["raw_content"] = self.full_content
+        return result
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SourceInfo:
+        """Construct a SourceInfo from a search API result dict.
+
+        Handles key aliases that appear across different search backends:
+        - ``name`` → ``title`` when ``title`` is absent.
+        - ``link`` / ``href`` → ``url`` when ``url`` is absent.
+        - ``content``, ``snippet``, ``body``, ``text``, ``description`` →
+          ``snippet`` (first non-empty value wins).
+        - ``raw_content`` → ``full_content``.
+        """
+        url = (
+            data.get("url")
+            or data.get("link")
+            or data.get("href")
+            or ""
+        )
+        title = (
+            data.get("title")
+            or data.get("name")
+            or url
+        )
+        snippet = (
+            data.get("content")
+            or data.get("snippet")
+            or data.get("body")
+            or data.get("text")
+            or data.get("description")
+            or ""
+        )
+        full_content = data.get("raw_content")
+
+        return cls(
+            title=title,
+            url=url,
+            snippet=snippet,
+            full_content=full_content,
+        )
 
 
 @dataclass(kw_only=True)

@@ -13,6 +13,7 @@ import httpx
 from hello_agents.tools import SearchTool
 
 from config import Configuration
+from models import SourceInfo
 from services.archiver import sanitize_topic
 from token_utils import truncate_to_tokens
 from utils import (
@@ -32,14 +33,14 @@ _GLOBAL_SEARCH_TOOL = SearchTool(backend="hybrid")
 WEBSITES_INFO_DIR = Path(__file__).resolve().parent.parent.parent / "websites_info"
 
 
-def _save_raw_content(source: dict, session_dir: Path) -> None:
-    """Persist raw_content of a source to a markdown file in session_dir.
+def _save_raw_content(source: SourceInfo, session_dir: Path) -> None:
+    """Persist full_content of a source to a markdown file in session_dir.
 
     Args:
-        source: Source dict with 'url', 'title', and 'raw_content' keys.
+        source: SourceInfo with url, title, and full_content fields.
         session_dir: Per-session directory under websites_info/.
     """
-    content = source.get("raw_content", "")
+    content = source.full_content or ""
     if not content:
         return
 
@@ -47,14 +48,14 @@ def _save_raw_content(source: dict, session_dir: Path) -> None:
         session_dir.mkdir(parents=True, exist_ok=True)
 
         # Build safe filename: domain + short hash of URL
-        url = source.get("url", "unknown")
+        url = source.url or "unknown"
         domain = url.split("//")[-1].split("/")[0] if "//" in url else "unknown"
         url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
         filename = f"{domain}_{url_hash}.md"
 
         filepath = session_dir / filename
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        title = source.get("title", url)
+        title = source.title or url
 
         file_content = (
             f"# {title}\n"
@@ -66,7 +67,7 @@ def _save_raw_content(source: dict, session_dir: Path) -> None:
         filepath.write_text(file_content, encoding="utf-8")
         logger.debug("Saved raw content to %s", filepath)
     except Exception as exc:
-        logger.warning("Failed to save raw content for %s: %s", source.get("url", "unknown"), exc)
+        logger.warning("Failed to save raw content for %s: %s", source.url or "unknown", exc)
 
 
 def dispatch_search(
@@ -200,12 +201,12 @@ def prepare_research_context(
 
 
 def fetch_full_content_for_sources(
-    sources: list[dict],
+    sources: list[SourceInfo],
     config: Configuration,
     *,
     research_topic: str | None = None,
     max_tokens_per_source: int = MAX_TOKENS_PER_SOURCE,
-) -> list[dict]:
+) -> list[SourceInfo]:
     """Fetch full page content for validated sources.
 
     This is the second stage of two-stage search: only fetch full content
@@ -215,13 +216,13 @@ def fetch_full_content_for_sources(
     P1: DuckDuckGo and Searxng (uses fallback httpx approach)
 
     Args:
-        sources: List of source dictionaries with url field
+        sources: List of SourceInfo objects with url field
         config: Configuration object with API keys
         research_topic: Optional topic for per-session file organization
         max_tokens_per_source: Maximum tokens per source for content truncation
 
     Returns:
-        List of sources with added raw_content field
+        List of SourceInfo with full_content populated
     """
     search_api = get_config_value(config.search_api)
 
@@ -245,11 +246,11 @@ def fetch_full_content_for_sources(
 
 
 def _fetch_tavily_content(
-    sources: list[dict],
+    sources: list[SourceInfo],
     config: Configuration,
     *,
     research_topic: str | None = None,
-) -> list[dict]:
+) -> list[SourceInfo]:
     """Fetch full content using Tavily Extract API.
 
     Tavily has a dedicated /extract endpoint for fetching full page content.
@@ -259,12 +260,12 @@ def _fetch_tavily_content(
     ``websites_info/{timestamp}_{topic}/`` for offline review.
 
     Args:
-        sources: List of source dictionaries with url field
+        sources: List of SourceInfo objects with url field
         config: Configuration object with Tavily API key
         research_topic: Optional topic for per-session file organization
 
     Returns:
-        List of sources with added raw_content field
+        List of SourceInfo with full_content populated
     """
     api_key = config.tavily_api_key if hasattr(config, 'tavily_api_key') else os.getenv("TAVILY_API_KEY")
     if not api_key:
@@ -284,22 +285,22 @@ def _fetch_tavily_content(
         try:
             response = httpx.post(
                 "https://api.tavily.com/extract",
-                json={"urls": [source["url"]]},
+                json={"urls": [source.url]},
                 headers=headers,
                 timeout=30,
             )
             result = response.json()
             if result.get("results"):
-                source["raw_content"] = result["results"][0].get("content", "")
+                source.full_content = result["results"][0].get("content", "")
                 if session_dir:
                     _save_raw_content(source, session_dir)
         except Exception as e:
-            logger.warning("Tavily extract failed for %s: %s", source.get('url', 'unknown'), e)
+            logger.warning("Tavily extract failed for %s: %s", source.url or 'unknown', e)
 
     return sources
 
 
-def _fetch_perplexity_content(sources: list[dict], config: Configuration, max_tokens_per_source: int = MAX_TOKENS_PER_SOURCE) -> list[dict]:
+def _fetch_perplexity_content(sources: list[SourceInfo], config: Configuration, max_tokens_per_source: int = MAX_TOKENS_PER_SOURCE) -> list[SourceInfo]:
     """Fetch full content using Perplexity Online API.
 
     Perplexity may not have a dedicated extract endpoint, so we use a
@@ -308,12 +309,12 @@ def _fetch_perplexity_content(sources: list[dict], config: Configuration, max_to
     TODO: Research Perplexity API documentation for native extract support.
 
     Args:
-        sources: List of source dictionaries with url field
+        sources: List of SourceInfo objects with url field
         config: Configuration object
         max_tokens_per_source: Maximum tokens per source for content truncation
 
     Returns:
-        List of sources with added raw_content field
+        List of SourceInfo with full_content populated
     """
     # Fallback to generic httpx approach
     return _fetch_with_httpx(sources, config, max_tokens_per_source=max_tokens_per_source)
@@ -376,11 +377,7 @@ def _search_keiro(query: str, config: Configuration) -> dict[str, Any]:
     for item in raw_results:
         if not isinstance(item, dict):
             continue
-        normalised_results.append({
-            "title": item.get("title") or item.get("name") or "",
-            "url": item.get("url") or item.get("link") or item.get("href") or "",
-            "content": item.get("content") or item.get("snippet") or item.get("text") or item.get("description") or "",
-        })
+        normalised_results.append(SourceInfo.from_dict(item).to_dict())
 
     # Check for a direct AI-style answer in the response
     answer = None
@@ -395,29 +392,29 @@ def _search_keiro(query: str, config: Configuration) -> dict[str, Any]:
     }
 
 
-def _fetch_with_httpx(sources: list[dict], config: Configuration, max_tokens_per_source: int = MAX_TOKENS_PER_SOURCE) -> list[dict]:
+def _fetch_with_httpx(sources: list[SourceInfo], config: Configuration, max_tokens_per_source: int = MAX_TOKENS_PER_SOURCE) -> list[SourceInfo]:
     """Fetch full content using httpx directly (generic fallback).
 
     This is a P1 implementation for backends without dedicated extract APIs.
     Uses basic HTTP fetching with text extraction.
 
     Args:
-        sources: List of source dictionaries with url field
+        sources: List of SourceInfo objects with url field
         config: Configuration object
         max_tokens_per_source: Maximum tokens to keep per source
 
     Returns:
-        List of sources with added raw_content field
+        List of SourceInfo with full_content populated
     """
     headers = {"User-Agent": "Mozilla/5.0 (compatible; DeepResearch/1.0)"}
 
     for source in sources:
         try:
-            response = httpx.get(source["url"], headers=headers, timeout=10)
+            response = httpx.get(source.url, headers=headers, timeout=10)
             text = response.text
-            source["raw_content"] = truncate_to_tokens(text, max_tokens_per_source)
+            source.full_content = truncate_to_tokens(text, max_tokens_per_source)
         except Exception as e:
-            logger.warning("HTTP fetch failed for %s: %s", source.get('url', 'unknown'), e)
-            source["raw_content"] = ""
+            logger.warning("HTTP fetch failed for %s: %s", source.url or 'unknown', e)
+            source.full_content = ""
 
     return sources
