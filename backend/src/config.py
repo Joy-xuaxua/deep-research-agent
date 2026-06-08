@@ -122,6 +122,11 @@ class Configuration(BaseModel):
         title="Log LLM Responses",
         description="Whether to print LLM response chunks to console (set LOG_LLM_RESPONSES=True to enable)",
     )
+    max_tokens_per_source: int = Field(
+        default=5000,
+        title="Max Tokens Per Source",
+        description="Maximum number of tokens of raw content to include per search source for summarization",
+    )
 
     @classmethod
     def from_env(cls, overrides: Optional[dict[str, Any]] = None) -> "Configuration":
@@ -158,6 +163,7 @@ class Configuration(BaseModel):
             "max_search_retries": os.getenv("MAX_SEARCH_RETRIES"),
             "keiro_api_key": os.getenv("KEIRO_API_KEY"),
             "log_llm_responses": os.getenv("LOG_LLM_RESPONSES"),
+            "max_tokens_per_source": os.getenv("MAX_TOKENS_PER_SOURCE"),
         }
 
         for key, value in env_aliases.items():

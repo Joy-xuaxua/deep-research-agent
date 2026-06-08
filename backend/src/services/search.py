@@ -14,6 +14,7 @@ from hello_agents.tools import SearchTool
 
 from config import Configuration
 from services.archiver import sanitize_topic
+from token_utils import truncate_to_tokens
 from utils import (
     deduplicate_and_format_sources,
     format_sources,
@@ -22,8 +23,7 @@ from utils import (
 
 logger = logging.getLogger(__name__)
 
-MAX_TOKENS_PER_SOURCE = 10000
-CHARS_PER_TOKEN = 4
+MAX_TOKENS_PER_SOURCE = 5000
 KEIRO_API_URL = "https://kierolabs.space/api/v2/keiro"
 KEIRO_DEFAULT_MAX_RESULTS = 5
 _GLOBAL_SEARCH_TOOL = SearchTool(backend="hybrid")
@@ -74,6 +74,7 @@ def dispatch_search(
     config: Configuration,
     loop_count: int,
     fetch_full_page: bool | None = None,
+    max_tokens_per_source: int = MAX_TOKENS_PER_SOURCE,
 ) -> Tuple[dict[str, Any] | None, list[str], Optional[str], str]:
     """Execute configured search backend and normalise response payload.
 
@@ -84,6 +85,7 @@ def dispatch_search(
         fetch_full_page: If None, use config.fetch_full_page;
                         If explicitly specified, overrides global config
                         (used for two-stage search optimization)
+        max_tokens_per_source: Maximum tokens per source for content truncation
 
     Returns:
         Tuple of (search_result_payload, notices_list, answer_text, backend_label)
@@ -127,7 +129,7 @@ def dispatch_search(
                 "mode": "structured",
                 "fetch_full_page": should_fetch_full,
                 "max_results": 5,
-                "max_tokens_per_source": MAX_TOKENS_PER_SOURCE,
+                "max_tokens_per_source": max_tokens_per_source,
                 "loop_count": loop_count,
             }
         )
@@ -171,13 +173,23 @@ def prepare_research_context(
     search_result: dict[str, Any] | None,
     answer_text: Optional[str],
     config: Configuration,
+    max_tokens_per_source: int = MAX_TOKENS_PER_SOURCE,
 ) -> tuple[str, str]:
-    """Build structured context and source summary for downstream agents."""
+    """Build structured context and source summary for downstream agents.
 
+    Args:
+        search_result: Search result payload with results list
+        answer_text: Optional AI-generated answer from search engine
+        config: Configuration object
+        max_tokens_per_source: Maximum tokens per source for content truncation
+
+    Returns:
+        Tuple of (sources_summary, formatted_context)
+    """
     sources_summary = format_sources(search_result)
     context = deduplicate_and_format_sources(
         search_result or {"results": []},
-        max_tokens_per_source=MAX_TOKENS_PER_SOURCE,
+        max_tokens_per_source=max_tokens_per_source,
         fetch_full_page=config.fetch_full_page,
     )
 
@@ -192,6 +204,7 @@ def fetch_full_content_for_sources(
     config: Configuration,
     *,
     research_topic: str | None = None,
+    max_tokens_per_source: int = MAX_TOKENS_PER_SOURCE,
 ) -> list[dict]:
     """Fetch full page content for validated sources.
 
@@ -205,6 +218,7 @@ def fetch_full_content_for_sources(
         sources: List of source dictionaries with url field
         config: Configuration object with API keys
         research_topic: Optional topic for per-session file organization
+        max_tokens_per_source: Maximum tokens per source for content truncation
 
     Returns:
         List of sources with added raw_content field
@@ -217,11 +231,11 @@ def fetch_full_content_for_sources(
 
     # P0: Perplexity
     if search_api == "perplexity":
-        return _fetch_perplexity_content(sources, config)
+        return _fetch_perplexity_content(sources, config, max_tokens_per_source=max_tokens_per_source)
 
     # P1: Keiro (no dedicated extract endpoint, use httpx fallback)
     if search_api == "keiro":
-        return _fetch_with_httpx(sources, config)
+        return _fetch_with_httpx(sources, config, max_tokens_per_source=max_tokens_per_source)
 
     # P1: Fallback for other backends
     logger.warning(
@@ -285,7 +299,7 @@ def _fetch_tavily_content(
     return sources
 
 
-def _fetch_perplexity_content(sources: list[dict], config: Configuration) -> list[dict]:
+def _fetch_perplexity_content(sources: list[dict], config: Configuration, max_tokens_per_source: int = MAX_TOKENS_PER_SOURCE) -> list[dict]:
     """Fetch full content using Perplexity Online API.
 
     Perplexity may not have a dedicated extract endpoint, so we use a
@@ -296,12 +310,13 @@ def _fetch_perplexity_content(sources: list[dict], config: Configuration) -> lis
     Args:
         sources: List of source dictionaries with url field
         config: Configuration object
+        max_tokens_per_source: Maximum tokens per source for content truncation
 
     Returns:
         List of sources with added raw_content field
     """
     # Fallback to generic httpx approach
-    return _fetch_with_httpx(sources, config)
+    return _fetch_with_httpx(sources, config, max_tokens_per_source=max_tokens_per_source)
 
 
 def _search_keiro(query: str, config: Configuration) -> dict[str, Any]:
@@ -380,7 +395,7 @@ def _search_keiro(query: str, config: Configuration) -> dict[str, Any]:
     }
 
 
-def _fetch_with_httpx(sources: list[dict], config: Configuration) -> list[dict]:
+def _fetch_with_httpx(sources: list[dict], config: Configuration, max_tokens_per_source: int = MAX_TOKENS_PER_SOURCE) -> list[dict]:
     """Fetch full content using httpx directly (generic fallback).
 
     This is a P1 implementation for backends without dedicated extract APIs.
@@ -389,6 +404,7 @@ def _fetch_with_httpx(sources: list[dict], config: Configuration) -> list[dict]:
     Args:
         sources: List of source dictionaries with url field
         config: Configuration object
+        max_tokens_per_source: Maximum tokens to keep per source
 
     Returns:
         List of sources with added raw_content field
@@ -398,11 +414,8 @@ def _fetch_with_httpx(sources: list[dict], config: Configuration) -> list[dict]:
     for source in sources:
         try:
             response = httpx.get(source["url"], headers=headers, timeout=10)
-            # Simple text extraction (could be enhanced with BeautifulSoup)
             text = response.text
-            # Limit content size
-            max_chars = MAX_TOKENS_PER_SOURCE * CHARS_PER_TOKEN
-            source["raw_content"] = text[:max_chars]
+            source["raw_content"] = truncate_to_tokens(text, max_tokens_per_source)
         except Exception as e:
             logger.warning("HTTP fetch failed for %s: %s", source.get('url', 'unknown'), e)
             source["raw_content"] = ""

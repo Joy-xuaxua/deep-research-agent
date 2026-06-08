@@ -18,7 +18,8 @@ dependencies = [
     "ddgs>=9.6.1",
     "loguru>=0.7.3",
     "huggingface_hub",
-    "pip-system-certs"
+    "pip-system-certs",
+    "tiktoken>=0.7.0",
 ]
 
 [project.optional-dependencies]

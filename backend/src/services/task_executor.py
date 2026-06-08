@@ -103,6 +103,7 @@ class TaskExecutor:
                 self.config,
                 state.research_loop_count,
                 fetch_full_page=False,
+                max_tokens_per_source=self.config.max_tokens_per_source,
             )
             self.last_search_notices = notices
             task.notices = notices
@@ -173,6 +174,7 @@ class TaskExecutor:
         if self.config.fetch_full_page and valid_sources:
             valid_sources = fetch_full_content_for_sources(
                 valid_sources, self.config, research_topic=state.research_topic,
+                max_tokens_per_source=self.config.max_tokens_per_source,
             )
 
         # No sources survived validation — mark skipped so the frontend can
@@ -202,6 +204,7 @@ class TaskExecutor:
             search_result,
             answer_text,
             self.config,
+            max_tokens_per_source=self.config.max_tokens_per_source,
         )
 
         task.sources_summary = sources_summary

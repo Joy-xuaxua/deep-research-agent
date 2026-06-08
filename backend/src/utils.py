@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Union
 
-CHARS_PER_TOKEN = 4
+from token_utils import truncate_to_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -60,9 +60,7 @@ def deduplicate_and_format_sources(
             if raw_content is None:
                 logger.debug("raw_content missing for %s", source.get("url", ""))
                 raw_content = ""
-            char_limit = max_tokens_per_source * CHARS_PER_TOKEN
-            if len(raw_content) > char_limit:
-                raw_content = f"{raw_content[:char_limit]}... [truncated]"
+            raw_content = truncate_to_tokens(raw_content, max_tokens_per_source)
             formatted_parts.append(
                 f"详细信息内容限制为 {max_tokens_per_source} 个 token: {raw_content}\n\n"
             )
