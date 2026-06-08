@@ -157,7 +157,7 @@ def create_app() -> FastAPI:
                 "query": item.query,
                 "status": item.status,
                 "summary": item.summary,
-                "sources_summary": item.sources_summary,
+                "sources_summary": item.sources_url_collection,
                 "note_id": item.note_id,
                 "note_path": item.note_path,
             }

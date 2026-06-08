@@ -438,7 +438,7 @@ class DeepResearchAgent:
             "query": task.query,
             "status": task.status,
             "summary": task.summary,
-            "sources_summary": task.sources_summary,
+            "sources_summary": task.srouces_url_collection,
             "note_id": task.note_id,
             "note_path": task.note_path,
             "stream_token": task.stream_token,

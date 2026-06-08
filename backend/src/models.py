@@ -17,7 +17,7 @@ class TodoItem:
     query: str
     status: str = field(default="pending")
     summary: Optional[str] = field(default=None)
-    sources_summary: Optional[str] = field(default=None)
+    sources_url_collection: Optional[str] = field(default=None)
     notices: list[str] = field(default_factory=list)
     note_id: Optional[str] = field(default=None)
     note_path: Optional[str] = field(default=None)

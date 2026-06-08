@@ -186,7 +186,7 @@ def prepare_research_context(
     Returns:
         Tuple of (sources_summary, formatted_context)
     """
-    sources_summary = format_sources(search_result)
+    sources_url = format_sources(search_result)
     context = deduplicate_and_format_sources(
         search_result or {"results": []},
         max_tokens_per_source=max_tokens_per_source,
@@ -196,7 +196,7 @@ def prepare_research_context(
     if answer_text:
         context = f"AI直接答案：\n{answer_text}\n\n{context}"
 
-    return sources_summary, context
+    return sources_url, context
 
 
 def fetch_full_content_for_sources(

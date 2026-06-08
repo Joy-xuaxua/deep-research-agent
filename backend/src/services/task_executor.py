@@ -200,18 +200,18 @@ class TaskExecutor:
 
         # Prepare research context with valid sources (now with full content)
         search_result = {"results": valid_sources, "backend": backend}
-        sources_summary, context = prepare_research_context(
+        sources_url, context = prepare_research_context(
             search_result,
             answer_text,
             self.config,
             max_tokens_per_source=self.config.max_tokens_per_source,
         )
 
-        task.sources_summary = sources_summary
+        tasks.sources_url_collection = sources_url
 
         with self.state_lock:
             state.web_research_results.append(context)
-            state.sources_gathered.append(sources_summary)
+            state.sources_gathered.append(sources_url)
             state.research_loop_count += 1
 
         summary_text: str | None = None
@@ -226,7 +226,7 @@ class TaskExecutor:
             yield {
                 "type": "sources",
                 "task_id": task.id,
-                "latest_sources": sources_summary,
+                "latest_sources": sources_url,
                 "raw_context": context,
                 "step": step,
                 "backend": backend,
@@ -276,7 +276,7 @@ class TaskExecutor:
                 "task_id": task.id,
                 "status": "completed",
                 "summary": task.summary,
-                "sources_summary": task.sources_summary,
+                "sources_summary": tasks.sources_url_collection,
                 "note_id": task.note_id,
                 "note_path": task.note_path,
                 "step": step,
@@ -308,8 +308,8 @@ class TaskExecutor:
         tags = ["deep_research", f"task_{task.id}"]
 
         parts = [f"检索查询：{task.query}"]
-        if task.sources_summary:
-            parts.append(f"\n## 来源概览\n{task.sources_summary}")
+        if tasks.sources_url_collection:
+            parts.append(f"\n## 来源概览\n{tasks.sources_url_collection}")
         parts.append(f"\n## 研究总结\n{task.summary}")
         content = "\n".join(parts)
 

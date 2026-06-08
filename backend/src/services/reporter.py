@@ -25,7 +25,7 @@ class ReportingService:
         tasks_block = []
         for task in state.todo_items:
             summary_block = task.summary or "暂无可用信息"
-            sources_block = task.sources_summary or "暂无来源"
+            sources_block = tasks.sources_url_collection or "暂无来源"
             tasks_block.append(
                 f"### 任务 {task.id}: {task.title}\n"
                 f"- 任务目标：{task.intent}\n"
