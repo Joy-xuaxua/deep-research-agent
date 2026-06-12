@@ -147,6 +147,7 @@ def create_app() -> FastAPI:
         except ValueError as exc:  # Likely due to unsupported configuration
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:  # pragma: no cover - defensive guardrail
+            logger.exception("Research failed")
             raise HTTPException(status_code=500, detail="Research failed") from exc
 
         todo_payload = [

@@ -22,7 +22,7 @@ from models import ResearchState, ResearchTask, SourceInfo
 from services.search import (
     dispatch_search,
     fetch_full_content_for_sources,
-    prepare_research_context,
+    format_search_results,
 )
 from services.summarizer import SummarizationService
 from services.tool_events import ToolCallTracker
@@ -105,7 +105,7 @@ class TaskExecutor:
                 fetch_full_page=False,
                 max_tokens_per_source=self.config.max_tokens_per_source,
             )
-            logger.info("dispatch search search_result: %s",search_result)
+            logger.info("dispatch search result: %s",search_result)
             self.last_search_notices = notices
             task.notices = notices
 
@@ -202,16 +202,16 @@ class TaskExecutor:
                 self._drain_tool_events(state)
             return
 
-        # Prepare research context with valid sources (now with full content)
-        search_result = {"results": [s.to_dict() for s in valid_sources], "backend": backend}
-        sources_url, context = prepare_research_context(
-            search_result,
+        # Format search results into source summary and summarization context
+        sources_url_summary, summarization_context = format_search_results(
+            valid_sources,
             answer_text,
             self.config,
             max_tokens_per_source=self.config.max_tokens_per_source,
         )
+        logger.info("format_search_results: summarization_context %s", summarization_context[100:])
 
-        task.sources_summary = sources_url
+        task.sources_summary = sources_url_summary
 
         with self.state_lock:
             state.research_loop_count += 1
@@ -228,8 +228,8 @@ class TaskExecutor:
             yield {
                 "type": "sources",
                 "task_id": task.id,
-                "latest_sources": sources_url,
-                "raw_context": context,
+                "latest_sources": sources_url_summary,
+                "raw_context": summarization_context,
                 "step": step,
                 "backend": backend,
                 "note_id": task.note_id,
@@ -239,7 +239,7 @@ class TaskExecutor:
             # Stream LLM output token-by-token for a typewriter effect.
             # Drain tool events between chunks to forward any NoteTool calls
             # the agent makes mid-generation.
-            summary_stream, summary_getter = self.summarizer.stream_task_summary(state, task, context)
+            summary_stream, summary_getter = self.summarizer.stream_task_summary(state, task, summarization_context)
             try:
                 for event in self._drain_tool_events(state, step=step):
                     yield event
@@ -258,11 +258,11 @@ class TaskExecutor:
                 # Collect whatever was generated even if the stream breaks.
                 summary_text = summary_getter()
         else:
-            summary_text = self.summarizer.summarize_task(state, task, context)
+            summary_text = self.summarizer.summarize_task(state, task, summarization_context)
             self._drain_tool_events(state)
 
         # Update task with summary and mark completed
-        task.summary = summary_text.strip() if summary_text else "暂无可用信息"
+        task.summary = summary_text.strip() if summary_text else "No available information"
         task.status = "completed"
 
         # Save task note programmatically (not via LLM tool call)
@@ -306,13 +306,13 @@ class TaskExecutor:
         if not self.note_tool or not task.summary:
             return
 
-        note_title = f"任务 {task.id}: {task.title}"
+        note_title = f"Task {task.id}: {task.title}"
         tags = ["deep_research", f"task_{task.id}"]
 
-        parts = [f"检索查询：{task.query}"]
+        parts = [f"Query: {task.query}"]
         if task.sources_summary:
-            parts.append(f"\n## 来源概览\n{task.sources_summary}")
-        parts.append(f"\n## 研究总结\n{task.summary}")
+            parts.append(f"\n## Source URL\n{task.sources_summary}")
+        parts.append(f"\n## Summary\n{task.summary}")
         content = "\n".join(parts)
 
         if task.note_id:

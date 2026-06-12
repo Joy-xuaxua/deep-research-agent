@@ -32,10 +32,11 @@ def _extract_sources_list(
 ) -> list[SourceInfo]:
     """Normalise a search payload or raw SourceInfo list into list[SourceInfo]."""
     if isinstance(search_response, list):
-        return search_response
-    raw = search_response.get("results", [])
-    # Results may be SourceInfo objects (from task_executor) or plain dicts
-    # (from HelloAgents SearchTool / dispatch_search fallback paths).
+        raw = search_response
+    else:
+        raw = search_response.get("results", [])
+    # Results may be SourceInfo objects or plain dicts (from task_executor
+    # converting via to_dict(), or from HelloAgents SearchTool).
     return [s if isinstance(s, SourceInfo) else SourceInfo.from_dict(s) for s in raw]
 
 
@@ -61,10 +62,10 @@ def deduplicate_and_format_sources(
         title = source.title or source.url
         formatted_parts.append(f"Title: {title}\n\n")
         formatted_parts.append(f"URL: {source.url}\n\n")
-        formatted_parts.append(f"Abstract: {source.snippet}\n\n")
+        formatted_parts.append(f"Abstract: {source.abstract}\n\n")
 
         if fetch_full_page:
-            full = source.full_content
+            full = source.content
             if full is None:
                 logger.debug("full_content missing for %s", source.url)
                 full = ""
@@ -76,15 +77,14 @@ def deduplicate_and_format_sources(
     return "".join(formatted_parts).strip()
 
 
-def format_sources(search_results: Dict[str, Any] | None) -> str:
+def format_sources(search_results: list[SourceInfo] | None) -> str:
     """Return bullet list summarising search sources."""
 
     if not search_results:
         return ""
 
-    results = search_results.get("results", [])
     lines: list[str] = []
-    for item in results:
+    for item in search_results:
         if isinstance(item, SourceInfo):
             if not item.url:
                 continue

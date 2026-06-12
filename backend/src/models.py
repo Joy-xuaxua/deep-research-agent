@@ -18,33 +18,33 @@ class SourceInfo:
         title: Page title from the search result. Falls back to url if empty.
         url: Canonical page URL. Used as the deduplication key across the
             research pipeline.
-        snippet: Short summary text returned by the search API (1-3 sentences).
+        abstract: Short summary text returned by the search API (1-3 sentences).
             May originate from keys named ``content``, ``snippet``, ``body``,
             ``text``, or ``description`` depending on the backend —
             ``from_dict()`` handles this normalisation.
-        full_content: Full page text fetched after the lightweight search stage
+        content: Full page text fetched after the lightweight search stage
             (two-stage search optimisation). ``None`` until a fetch backend
             populates it.
     """
 
     title: str
     url: str
-    snippet: str = field(default="")
-    full_content: Optional[str] = field(default=None)
+    abstract: str = field(default="")
+    content: Optional[str] = field(default=None)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to the standard source dict shape for backward compatibility.
 
-        Maps internal field names to the legacy dict keys:
-        ``snippet`` → ``content``, ``full_content`` → ``raw_content``.
+        Maps internal field names to the output dict keys:
+        ``abstract`` → ``abstract``, ``content`` → ``content``.
         """
         result: dict[str, Any] = {
             "title": self.title,
             "url": self.url,
-            "content": self.snippet,
+            "abstract": self.abstract,
         }
-        if self.full_content is not None:
-            result["raw_content"] = self.full_content
+        if self.content is not None:
+            result["content"] = self.content
         return result
 
     @classmethod
@@ -55,8 +55,8 @@ class SourceInfo:
         - ``name`` → ``title`` when ``title`` is absent.
         - ``link`` / ``href`` → ``url`` when ``url`` is absent.
         - ``content``, ``snippet``, ``body``, ``text``, ``description`` →
-          ``snippet`` (first non-empty value wins).
-        - ``raw_content`` → ``full_content``.
+          ``abstract`` (first non-empty value wins).
+        - ``raw_content`` → ``content``.
         """
         url = (
             data.get("url")
@@ -69,7 +69,7 @@ class SourceInfo:
             or data.get("name")
             or url
         )
-        snippet = (
+        abstract = (
             data.get("content")
             or data.get("snippet")
             or data.get("body")
@@ -77,13 +77,13 @@ class SourceInfo:
             or data.get("description")
             or ""
         )
-        full_content = data.get("raw_content")
+        content = data.get("raw_content")
 
         return cls(
             title=title,
             url=url,
-            snippet=snippet,
-            full_content=full_content,
+            abstract=abstract,
+            content=content,
         )
 
 

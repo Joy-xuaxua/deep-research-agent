@@ -37,10 +37,10 @@ def _save_raw_content(source: SourceInfo, session_dir: Path) -> None:
     """Persist full_content of a source to a markdown file in session_dir.
 
     Args:
-        source: SourceInfo with url, title, and full_content fields.
+        source: SourceInfo with url, title, and content fields.
         session_dir: Per-session directory under websites_info/.
     """
-    content = source.full_content or ""
+    content = source.content or ""
     if not content:
         return
 
@@ -170,13 +170,18 @@ def dispatch_search(
     return payload, notices, answer_text, backend_label
 
 
-def prepare_research_context(
-    search_result: dict[str, Any] | None,
+def format_search_results(
+    search_result: list[SourceInfo] | None,
     answer_text: Optional[str],
     config: Configuration,
     max_tokens_per_source: int = MAX_TOKENS_PER_SOURCE,
 ) -> tuple[str, str]:
-    """Build structured context and source summary for downstream agents.
+    """Build a source URL list and formatted content for the summarization agent.
+
+    Takes raw search results and produces two outputs:
+      1. A concise URL/title summary sent to the frontend for citation display.
+      2. Deduplicated, token-truncated source content (with any direct LLM
+         answer prepended) that is fed into the summarization agent.
 
     Args:
         search_result: Search result payload with results list
@@ -185,19 +190,19 @@ def prepare_research_context(
         max_tokens_per_source: Maximum tokens per source for content truncation
 
     Returns:
-        Tuple of (sources_summary, formatted_context)
+        Tuple of (sources_url_summary, summarization_context)
     """
-    sources_url = format_sources(search_result)
-    context = deduplicate_and_format_sources(
-        search_result or {"results": []},
+    sources_url_summary = format_sources(search_result)
+    summarization_context = deduplicate_and_format_sources(
+        search_result or [],
         max_tokens_per_source=max_tokens_per_source,
         fetch_full_page=config.fetch_full_page,
     )
 
     if answer_text:
-        context = f"LLM directly gives answer :\n{answer_text}\n\n{context}"
+        summarization_context = f"LLM directly gives answer :\n{answer_text}\n\n{summarization_context}"
 
-    return sources_url, context
+    return sources_url_summary, summarization_context
 
 
 def fetch_full_content_for_sources(
@@ -291,7 +296,7 @@ def _fetch_tavily_content(
             )
             result = response.json()
             if result.get("results"):
-                source.full_content = result["results"][0].get("content", "")
+                source.content = result["results"][0].get("content", "")
                 if session_dir:
                     _save_raw_content(source, session_dir)
         except Exception as e:
@@ -412,9 +417,9 @@ def _fetch_with_httpx(sources: list[SourceInfo], config: Configuration, max_toke
         try:
             response = httpx.get(source.url, headers=headers, timeout=10)
             text = response.text
-            source.full_content = truncate_to_tokens(text, max_tokens_per_source)
+            source.content = truncate_to_tokens(text, max_tokens_per_source)
         except Exception as e:
             logger.warning("HTTP fetch failed for %s: %s", source.url or 'unknown', e)
-            source.full_content = ""
+            source.content = ""
 
     return sources

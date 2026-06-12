@@ -42,7 +42,7 @@ class SummarizationService:
 
         summary_text = strip_tool_calls(summary_text).strip()
 
-        return summary_text or "暂无可用信息"
+        return summary_text or "No available information"
 
     def stream_task_summary(
         self, state: ResearchState, task: ResearchTask, context: str

@@ -99,7 +99,7 @@ class SourceValidator:
             task_query=task_query,
             title=source.title,
             url=source.url,
-            content=source.snippet,
+            content=source.abstract,
         )
 
     def _parse_validation_response(self, response: str) -> bool:
