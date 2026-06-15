@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Dict, List
 
@@ -95,3 +96,36 @@ def format_sources(search_results: list[SourceInfo] | None) -> str:
                 continue
             lines.append(f"* {item.get('title', url)} : {url}")
     return "\n".join(lines)
+
+
+_TRUNCATE_SUFFIX = " ... [truncated]"  # mirrors token_utils.py suffix style
+
+
+def _truncate_words(text: str, max_words: int = 50) -> str:
+    """Truncate ``text`` to at most ``max_words`` whitespace-separated words."""
+
+    words = text.split()
+    if len(words) <= max_words:
+        return text
+    return " ".join(words[:max_words]) + _TRUNCATE_SUFFIX
+
+
+def truncate_dict_for_print(data: Any, *, max_words: int = 50) -> str:
+    """Pretty-print ``data`` with long string values truncated to ``max_words`` words.
+
+    Recurses into nested dicts, lists, and tuples; keys and non-string scalars
+    are left untouched. Returns an indented JSON string suitable for logging.
+    """
+
+    def _walk(value: Any) -> Any:
+        if isinstance(value, str):
+            return _truncate_words(value, max_words)
+        if isinstance(value, dict):
+            return {k: _walk(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [_walk(v) for v in value]
+        if isinstance(value, tuple):
+            return tuple(_walk(v) for v in value)
+        return value
+
+    return json.dumps(_walk(data), indent=2, ensure_ascii=False, default=str)
