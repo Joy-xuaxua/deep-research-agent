@@ -26,6 +26,7 @@ from services.search import (
 )
 from services.summarizer import SummarizationService
 from services.tool_events import ToolCallTracker
+import utils
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +106,7 @@ class TaskExecutor:
                 fetch_full_page=False,
                 max_tokens_per_source=self.config.max_tokens_per_source,
             )
-            logger.info("dispatch search result: %s",search_result)
+            logger.info("dispatch search result: %s",utils.truncate_dict_for_print(search_result))
             self.last_search_notices = notices
             task.notices = notices
 
